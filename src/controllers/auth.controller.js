@@ -28,7 +28,7 @@ export async function sendMobileOtp(req, res) {
     if (!mobile) {
       return res.status(400).json({ error: 'Mobile is required' });
     }
-
+    console.log('mobile', mobile, deviceId, userAgent);
     await authService.sendMobileOtp(mobile, deviceId, userAgent);
     res.json({ success: true });
   } catch (err) {
