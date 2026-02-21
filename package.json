@@ -1,0 +1,31 @@
+{
+  "name": "word-template-merge-backend",
+  "version": "1.0.0",
+  "description": "Word template merge API",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dayjs": "^1.11.13",
+    "docxtemplater": "^3.55.0",
+    "docxtemplater-image-module-free": "^1.1.1",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "google-auth-library": "^9.15.1",
+    "image-size": "^1.2.1",
+    "jsonwebtoken": "^9.0.2",
+    "lodash": "^4.17.23",
+    "mongoose": "^8.8.4",
+    "multer": "^1.4.5-lts.1",
+    "pizzip": "^3.1.7",
+    "resend": "^6.9.2",
+    "stripe": "^17.3.1",
+    "uuid": "^11.0.3"
+  }
+}
