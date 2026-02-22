@@ -11,9 +11,71 @@ import {
   JWT_REFRESH_EXPIRY_DAYS,
   OTP_EXPIRY_MINUTES,
   OTP_LENGTH,
+  GOOGLE_ID_TOKEN_EXPIRY_LEEWAY_SECONDS,
 } from '../config/auth.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const GOOGLE_CERTS_URL = 'https://www.googleapis.com/oauth2/v1/certs';
+const GOOGLE_ISSUER = 'https://accounts.google.com';
+
+/** Verify Google ID token; on "Token used too late" (clock skew) re-verify with expiry leeway. */
+async function verifyGoogleIdToken(idToken) {
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    return ticket.getPayload();
+  } catch (err) {
+    if (err?.message?.includes('Token used too late')) {
+      const payload = await verifyGoogleIdTokenWithLeeway(idToken);
+      if (payload) return payload;
+    }
+    throw err;
+  }
+}
+
+/** Verify signature and audience/issuer, accept token if now <= exp + leeway (for server clock skew). */
+async function verifyGoogleIdTokenWithLeeway(idToken) {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) return null;
+
+  const parts = idToken.split('.');
+  if (parts.length !== 3) return null;
+
+  let header;
+  try {
+    header = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf8'));
+  } catch {
+    return null;
+  }
+  const kid = header?.kid;
+  if (!kid) return null;
+
+  const res = await fetch(GOOGLE_CERTS_URL);
+  if (!res.ok) return null;
+  const certs = await res.json();
+  const pem = certs[kid];
+  if (!pem) return null;
+
+  let payload;
+  try {
+    payload = jwt.verify(idToken, pem, {
+      algorithms: ['RS256'],
+      audience: clientId,
+      issuer: GOOGLE_ISSUER,
+      ignoreExpiration: true,
+    });
+  } catch {
+    return null;
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp != null && now > payload.exp + GOOGLE_ID_TOKEN_EXPIRY_LEEWAY_SECONDS) {
+    throw new Error('Google ID token expired');
+  }
+  return payload;
+}
 
 function generateOtp() {
   return String(Math.floor(100000 + Math.random() * 900000));
@@ -106,11 +168,7 @@ export const authService = {
   },
 
   async googleAuth(idToken, deviceId = '', userAgent = '') {
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
-    const payload = ticket.getPayload();
+    const payload = await verifyGoogleIdToken(idToken);
     const googleId = payload.sub;
     const email = payload.email?.toLowerCase().trim();
     if (!email) throw new Error('Google profile missing email');
