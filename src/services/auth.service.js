@@ -19,10 +19,15 @@ const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const GMAIL_REGEX = /^[a-zA-Z0-9.+_-]+@gmail\.com$/;
 const MIN_PASSWORD_LENGTH = 8;
+const ADMIN_EMAIL = 'ipkaushal16@gmail.com';
 
 function isGmail(email) {
   const normalized = String(email).toLowerCase().trim();
   return GMAIL_REGEX.test(normalized);
+}
+
+function getRoleForEmail(email) {
+  return email?.toLowerCase() === ADMIN_EMAIL ? 'admin' : 'user';
 }
 const GOOGLE_CERTS_URL = 'https://www.googleapis.com/oauth2/v1/certs';
 const GOOGLE_ISSUER = 'https://accounts.google.com';
@@ -139,6 +144,7 @@ export const authService = {
         email: normalized,
         name: initialName,
         trialStartDate: new Date(),
+        role: getRoleForEmail(normalized),
       });
     }
 
@@ -169,6 +175,7 @@ export const authService = {
         mobile: normalized,
         name: initialName,
         trialStartDate: new Date(),
+        role: getRoleForEmail(userEmail),
       });
     }
 
@@ -200,6 +207,7 @@ export const authService = {
       name: initialName,
       passwordHash,
       trialStartDate: new Date(),
+      role: getRoleForEmail(normalized),
     });
 
     await this.upsertDevice(user, deviceId, userAgent);
@@ -248,6 +256,7 @@ export const authService = {
           googleId,
           name: initialName,
           trialStartDate: new Date(),
+          role: getRoleForEmail(email),
         });
       }
     }

@@ -1,4 +1,7 @@
-const COUNTRY_DATA = {
+import Country from '../models/Country.js';
+
+/** Fallback data when DB lookup fails (e.g. migration not run) */
+const FALLBACK_DATA = {
   India: {
     Country_Standard_Time: 'Indian Standard Time (IST)',
     Country_Code: '+91',
@@ -20,23 +23,40 @@ const COUNTRY_DATA = {
 };
 
 /**
- * Resolves country-specific data for the Arrange Venue template.
- * @param {string} country - Country name (India | UAE | Australia)
- * @returns {Object} { Country_Standard_Time, Country_Code, Country_Standard_Time_Short, COUNTRY_CURRENCY_SHORT_NAME }
- * @throws {Error} If country is not supported
+ * Resolves country-specific data from the database.
+ * Falls back to hardcoded data if DB lookup fails.
+ * @param {string} country - Country name (e.g. India, UAE)
+ * @returns {Promise<Object>} { Country_Standard_Time, Country_Code, Country_Standard_Time_Short, COUNTRY_CURRENCY_SHORT_NAME }
  */
-export function resolveCountryData(country) {
+export async function resolveCountryData(country) {
   if (!country || typeof country !== 'string') {
     throw new Error('Country must be a non-empty string');
   }
 
   const normalized = country.trim();
-  const data = COUNTRY_DATA[normalized];
 
-  if (!data) {
-    const supported = Object.keys(COUNTRY_DATA).join(', ');
-    throw new Error(`Unsupported country: "${country}". Supported: ${supported}`);
+  try {
+    const doc = await Country.findOne({
+      $or: [{ name: normalized }, { code: normalized }],
+    }).lean();
+
+    if (doc) {
+      return {
+        Country_Standard_Time: doc.standardTime,
+        Country_Code: doc.countryCode,
+        Country_Standard_Time_Short: doc.timeShort,
+        COUNTRY_CURRENCY_SHORT_NAME: doc.currency,
+      };
+    }
+  } catch (err) {
+    console.warn('resolveCountryData DB lookup failed:', err.message);
   }
 
-  return { ...data };
+  const fallback = FALLBACK_DATA[normalized];
+  if (fallback) {
+    return { ...fallback };
+  }
+
+  const supported = Object.keys(FALLBACK_DATA).join(', ');
+  throw new Error(`Unsupported country: "${country}". Supported: ${supported}`);
 }

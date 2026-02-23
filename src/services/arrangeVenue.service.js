@@ -93,12 +93,16 @@ const TIME_VARS = [
  * @param {Object} input - Raw input (Country, Event_Date, Start_Time_For_Booking_Venue, etc.)
  * @returns {Object} Validated data with exact casing
  */
-export function runArrangeVenueAutomations(input) {
+export async function runArrangeVenueAutomations(input) {
   const data = { ...input };
 
   const country = input.Country ?? input.country;
   if (country) {
-    Object.assign(data, resolveCountryData(country));
+    try {
+      Object.assign(data, await resolveCountryData(country));
+    } catch (err) {
+      console.warn(`Failed to resolve country data for ${country}:`, err.message);
+    }
   }
 
   if (input.Start_Time_For_Booking_Venue) {

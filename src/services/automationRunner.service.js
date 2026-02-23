@@ -17,9 +17,9 @@ import { getTemplateConfig } from '../templates/templateRegistry.js';
  *
  * @param {string} actionSlug - e.g. 'arrange-venue', 'arrange-accommodation', 'cancel-notary'
  * @param {Object} input - Raw form data
- * @returns {Object} Processed data for DocxGenerator
+ * @returns {Promise<Object>} Processed data for DocxGenerator
  */
-export function runAutomation(actionSlug, input) {
+export async function runAutomation(actionSlug, input) {
   const config = getTemplateConfig(actionSlug);
   if (!config) throw new Error(`Unknown action: ${actionSlug}`);
 
@@ -29,7 +29,7 @@ export function runAutomation(actionSlug, input) {
   const country = input.Country ?? input.country;
   if (country) {
     try {
-      Object.assign(data, resolveCountryData(country));
+      Object.assign(data, await resolveCountryData(country));
     } catch (err) {
       // If country resolution fails, continue without it
       console.warn(`Failed to resolve country data for ${country}:`, err.message);
@@ -92,7 +92,7 @@ export function runAutomation(actionSlug, input) {
 
   switch (config.automation) {
     case 'arrangeVenue':
-      return runArrangeVenueAutomations(data);
+      return await runArrangeVenueAutomations(data);
     default:
       return data;
   }

@@ -95,10 +95,10 @@ export async function generateDocument(req, res) {
       }
     }
 
-    // Run automation to get processed data - uses same flow as arrange-venue
+    // Run automation to get processed data
     // IMPORTANT: Images are handled separately and passed directly to DocxGenerator
     // Automation only processes text variables, not images
-    const data = runAutomation(actionSlug, variables);
+    const data = await runAutomation(actionSlug, variables);
 
     // Generate document - EXACT same logic as arrange-venue controller (line-by-line match)
     // Pass sanitizedImages directly to DocxGenerator - this is the key to image insertion
