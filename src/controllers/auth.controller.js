@@ -81,6 +81,40 @@ export async function verifyMobileOtp(req, res) {
   }
 }
 
+export async function register(req, res) {
+  try {
+    const { email, password } = req.body;
+    const deviceId = req.body.deviceId || req.headers['x-device-id'] || '';
+    const userAgent = req.body.userAgent || req.headers['user-agent'] || '';
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const session = await authService.registerWithPassword(email, password, deviceId, userAgent);
+    res.status(201).json(session);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+export async function loginWithPassword(req, res) {
+  try {
+    const { email, password } = req.body;
+    const deviceId = req.body.deviceId || req.headers['x-device-id'] || '';
+    const userAgent = req.body.userAgent || req.headers['user-agent'] || '';
+
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
+    const session = await authService.loginWithPassword(email, password, deviceId, userAgent);
+    res.json(session);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
 export async function googleAuth(req, res) {
   try {
     const { idToken } = req.body;

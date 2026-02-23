@@ -12,6 +12,8 @@ import { applyDocumentFontFormat } from '../services/docxFontFormatter.service.j
 import { canDownloadFullDocx } from '../utils/subscriptionUtils.js';
 import { getTemplatePath } from '../templates/templateRegistry.js';
 import User from '../models/User.js';
+import Document from '../models/Document.js';
+import { extractTextFromDocx } from '../utils/docxTextExtract.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -118,6 +120,17 @@ export async function generateDocument(req, res) {
     }
 
     buffer = applyDocumentFontFormat(buffer);
+
+    // Store document in history with merged text and DOCX file (for File Storage preview/download)
+    if (!previewOnly && downloadCheck.allowed) {
+      const contentText = extractTextFromDocx(buffer);
+      await Document.create({
+        userId: user._id,
+        actionSlug,
+        content: contentText,
+        fileBuffer: buffer,
+      });
+    }
 
     const safeSlug = actionSlug.replace(/[^a-z0-9-]/gi, '-');
     res.set({

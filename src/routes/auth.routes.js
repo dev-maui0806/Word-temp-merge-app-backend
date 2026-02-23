@@ -12,6 +12,10 @@ router.put('/me', requireAuth, authController.updateProfile);
 router.post('/pin/setup', requireAuth, enforcePinRestrictions, authController.setupPin);
 router.post('/pin/login', authController.loginWithPin);
 
+// Gmail + password (manual account)
+router.post('/register', authController.register);
+router.post('/login', authController.loginWithPassword);
+
 // OTP / Google flows
 router.post('/otp/email/send', authController.sendEmailOtp);
 router.post('/otp/email/verify', authController.verifyEmailOtp);

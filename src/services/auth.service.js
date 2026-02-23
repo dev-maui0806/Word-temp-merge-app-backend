@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcrypt';
 import dayjs from 'dayjs';
 import { v4 as uuidv4 } from 'uuid';
 import { OAuth2Client } from 'google-auth-library';
@@ -15,6 +16,14 @@ import {
 } from '../config/auth.js';
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+const GMAIL_REGEX = /^[a-zA-Z0-9.+_-]+@gmail\.com$/;
+const MIN_PASSWORD_LENGTH = 8;
+
+function isGmail(email) {
+  const normalized = String(email).toLowerCase().trim();
+  return GMAIL_REGEX.test(normalized);
+}
 const GOOGLE_CERTS_URL = 'https://www.googleapis.com/oauth2/v1/certs';
 const GOOGLE_ISSUER = 'https://accounts.google.com';
 
@@ -165,6 +174,59 @@ export const authService = {
 
     await this.upsertDevice(user, deviceId, userAgent);
     return this.createSession(user, deviceId, userAgent);
+  },
+
+  async registerWithPassword(email, password, deviceId = '', userAgent = '') {
+    const normalized = String(email).toLowerCase().trim();
+    if (!isGmail(normalized)) {
+      throw new Error('Only Gmail addresses are allowed. Please use your @gmail.com account.');
+    }
+    if (!password || typeof password !== 'string') {
+      throw new Error('Password is required.');
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters.`);
+    }
+
+    const existing = await User.findOne({ email: normalized });
+    if (existing) {
+      throw new Error('An account with this Gmail address already exists. Please sign in instead.');
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const initialName = normalized.split('@')[0] || '';
+    const user = await User.create({
+      email: normalized,
+      name: initialName,
+      passwordHash,
+      trialStartDate: new Date(),
+    });
+
+    await this.upsertDevice(user, deviceId, userAgent);
+    return this.createSession(user, deviceId, userAgent, 'password');
+  },
+
+  async loginWithPassword(email, password, deviceId = '', userAgent = '') {
+    const normalized = String(email).toLowerCase().trim();
+    if (!normalized || !password) {
+      throw new Error('Email and password are required.');
+    }
+
+    const user = await User.findOne({ email: normalized });
+    if (!user) {
+      throw new Error('Invalid email or password.');
+    }
+    if (!user.passwordHash) {
+      throw new Error('This account uses a different sign-in method. Please use OTP or Google sign-in.');
+    }
+
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+      throw new Error('Invalid email or password.');
+    }
+
+    await this.upsertDevice(user, deviceId, userAgent);
+    return this.createSession(user, deviceId, userAgent, 'password');
   },
 
   async googleAuth(idToken, deviceId = '', userAgent = '') {

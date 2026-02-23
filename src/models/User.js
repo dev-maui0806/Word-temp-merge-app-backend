@@ -33,6 +33,10 @@ const userSchema = new mongoose.Schema(
       unique: true,
       sparse: true,
     },
+    /** For manual (Gmail + password) accounts. */
+    passwordHash: {
+      type: String,
+    },
     role: {
       type: String,
       enum: ['admin', 'user'],
