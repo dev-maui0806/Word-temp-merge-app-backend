@@ -5,14 +5,16 @@ import * as countryController from '../controllers/country.controller.js';
 
 const router = Router();
 
+// All routes in this router are mounted under /admin in index.js
+// and are protected by the admin middleware.
 router.use(requireAdmin);
 
 /** Templates */
-router.get('/admin/templates', adminController.listTemplates);
-router.get('/admin/templates/:actionSlug/file', adminController.getTemplateFile);
-router.post('/admin/templates/:actionSlug/save', adminController.saveTemplateFromHtml);
+router.get('/templates', adminController.listTemplates);
+router.get('/templates/:actionSlug/file', adminController.getTemplateFile);
+router.post('/templates/:actionSlug/save', adminController.saveTemplateFromHtml);
 router.post(
-  '/admin/templates/:actionSlug/upload',
+  '/templates/:actionSlug/upload',
   (req, res, next) => {
     adminController.uploadTemplate(req, res, (err) => {
       if (err) return res.status(400).json({ error: err.message || 'Upload failed' });
@@ -21,17 +23,17 @@ router.post(
   },
   adminController.uploadTemplateFile
 );
-router.delete('/admin/templates/:actionSlug', adminController.deleteTemplate);
+router.delete('/templates/:actionSlug', adminController.deleteTemplate);
 
 /** Countries */
-router.post('/admin/countries', countryController.createCountry);
-router.patch('/admin/countries/:id', countryController.updateCountry);
-router.delete('/admin/countries/:id', countryController.deleteCountry);
+router.post('/countries', countryController.createCountry);
+router.patch('/countries/:id', countryController.updateCountry);
+router.delete('/countries/:id', countryController.deleteCountry);
 
 /** Users & documents (admin only) */
-router.get('/admin/users', adminController.listUsers);
-router.get('/admin/users/:userId/documents', adminController.listUserDocuments);
-router.get('/admin/users/:userId/documents/:id', adminController.getUserDocument);
-router.get('/admin/users/:userId/documents/:id/file', adminController.getUserDocumentFile);
+router.get('/users', adminController.listUsers);
+router.get('/users/:userId/documents', adminController.listUserDocuments);
+router.get('/users/:userId/documents/:id', adminController.getUserDocument);
+router.get('/users/:userId/documents/:id/file', adminController.getUserDocumentFile);
 
 export default router;

@@ -15,12 +15,12 @@ router.get('/health', (req, res) => {
 });
 
 router.use('/auth', authRoutes);
-router.use('/', adminRoutes);
 router.use('/', countryRoutes);
 router.use('/', templateRoutes);
 router.use('/', documentRoutes);
 router.use('/', contactRoutes);
 router.use('/', eventRoutes);
 router.use('/', arrangeVenueRoutes);
+router.use('/admin', adminRoutes);
 
 export default router;
