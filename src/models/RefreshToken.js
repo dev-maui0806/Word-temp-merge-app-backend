@@ -7,7 +7,9 @@ const refreshTokenSchema = new mongoose.Schema(
     deviceId: { type: String },
     userAgent: { type: String, default: '' },
     expiresAt: { type: Date, required: true },
-    authMethod: { type: String, enum: ['otp', 'google', 'pin'], default: 'otp' },
+    // Track how the user authenticated for this refresh token.
+    // Include 'password' for email+password logins.
+    authMethod: { type: String, enum: ['otp', 'google', 'pin', 'password'], default: 'otp' },
   },
   { timestamps: true }
 );
