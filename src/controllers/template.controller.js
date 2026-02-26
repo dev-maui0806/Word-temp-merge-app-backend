@@ -96,9 +96,11 @@ export async function generateDocument(req, res) {
     }
 
     // Run automation to get processed data
-    // IMPORTANT: Images are handled separately and passed directly to DocxGenerator
-    // Automation only processes text variables, not images
-    const data = await runAutomation(actionSlug, variables);
+    // IMPORTANT:
+    // - Images are handled separately and passed directly to DocxGenerator.
+    // - For preview we relax automation rules so missing/empty fields do not
+    //   block rendering; for final generation we keep strict validation.
+    const data = await runAutomation(actionSlug, variables, { previewOnly });
 
     // Generate document - EXACT same logic as arrange-venue controller (line-by-line match)
     // Pass sanitizedImages directly to DocxGenerator - this is the key to image insertion

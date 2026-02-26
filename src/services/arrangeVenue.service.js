@@ -39,10 +39,12 @@ const allowedVariables = [
  * - Prevents placeholder mismatch by ensuring only valid variables pass through
  *
  * @param {Object} input - Raw input object (keys may have wrong casing)
+ * @param {{ previewOnly?: boolean }} [options] - Controls strictness; preview relaxes required checks
  * @returns {Object} Sanitized object with only allowed variables and exact casing
  * @throws {Error} If any required variable is missing
  */
-export function validateArrangeVenueVariables(input) {
+export function validateArrangeVenueVariables(input, options = {}) {
+  const { previewOnly = false } = options;
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new Error('Input must be a non-null object');
   }
@@ -56,25 +58,28 @@ export function validateArrangeVenueVariables(input) {
     // Meeting_Type is allowed to be intentionally blank (e.g. "None")
     if (key === 'Meeting_Type') {
       if (value === undefined || value === null) {
-        missing.push(key);
+        if (!previewOnly) {
+          missing.push(key);
+        }
         continue;
       }
       sanitized[key] = value;
       continue;
     }
 
+    // In preview mode, treat missing/empty values as allowed (they will render as blank).
     if (value === undefined || value === null || value === '') {
-      missing.push(key);
+      if (!previewOnly) {
+        missing.push(key);
+      }
       continue;
     }
 
     sanitized[key] = value;
   }
 
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing required variables: ${missing.join(', ')}`
-    );
+  if (!previewOnly && missing.length > 0) {
+    throw new Error(`Missing required variables: ${missing.join(', ')}`);
   }
 
   return sanitized;
@@ -91,9 +96,11 @@ const TIME_VARS = [
 /**
  * Runs all automations and returns full validated data for Arrange Venue template.
  * @param {Object} input - Raw input (Country, Event_Date, Start_Time_For_Booking_Venue, etc.)
+ * @param {{ previewOnly?: boolean }} [options] - Controls strictness; preview relaxes required checks
  * @returns {Object} Validated data with exact casing
  */
-export async function runArrangeVenueAutomations(input) {
+export async function runArrangeVenueAutomations(input, options = {}) {
+  const { previewOnly = false } = options;
   const data = { ...input };
 
   const country = input.Country ?? input.country;
@@ -124,10 +131,16 @@ export async function runArrangeVenueAutomations(input) {
   }
 
   for (const key of TIME_VARS) {
-    if (data[key] != null && typeof data[key] === 'string' && !data[key].includes('h')) {
+    // Only enforce time format when we actually have a non-empty value.
+    if (
+      data[key] != null &&
+      typeof data[key] === 'string' &&
+      data[key].trim() !== '' &&
+      !data[key].includes('h')
+    ) {
       data[key] = enforceTimeFormat(data[key]);
     }
   }
 
-  return validateArrangeVenueVariables(data);
+  return validateArrangeVenueVariables(data, { previewOnly });
 }

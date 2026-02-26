@@ -1,6 +1,6 @@
 import { requireAuth } from './auth.js';
 
-const ADMIN_EMAIL = 'ipkaushal16@gmail.com';
+const ADMIN_EMAIL = 'yasasrree02@gmail.com';
 
 /**
  * Require admin access: authenticated user AND (email === admin email OR role === 'admin')

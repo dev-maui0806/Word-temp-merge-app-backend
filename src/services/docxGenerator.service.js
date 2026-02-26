@@ -8,9 +8,17 @@ import ImageModule from 'docxtemplater-image-module-free';
 const require = createRequire(import.meta.url);
 const imageSize = require('image-size');
 
+// Tiny 1x1 transparent PNG used as a safe fallback when an image
+// placeholder is present in the template but no image was provided.
+// This keeps image fields effectively optional and prevents generation errors.
+const EMPTY_IMAGE_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO2Z3XQAAAAASUVORK5CYII=',
+  'base64'
+);
+
 /**
  * DocxGenerator: Load template, inject data, embed images, return Buffer.
- * Uses docxtemplater + pizzip. Throws if any placeholder remains unresolved.
+ * Uses docxtemplater + pizzip. Missing placeholders are rendered as blank.
  */
 export class DocxGenerator {
   /**
@@ -47,24 +55,21 @@ export class DocxGenerator {
         // - We set mergedData.logo = "logo" (string), so tagValue = "logo"
         // - ImageModule calls getImage("logo", "logo") where both are "logo"
         // - We look up this.images["logo"] to get the Buffer
-        
+
         // Use tagName as primary key (this is the extracted name from the template)
         // ImageModule strips '%' prefix when parsing {{%logo}}, so tagName is "logo" (not "%logo")
         // We normalize image keys in the controller, so this.images has "logo" (not "%logo")
-        // This matches exactly how arrange-venue works - unified logic for all action types
+        // This matches exactly how arrange-venue works - unified logic for all action types.
         const imageKey = tagName || tagValue;
         const buffer = this.images[imageKey];
-        
-        if (!buffer || !Buffer.isBuffer(buffer)) {
-          const availableKeys = Object.keys(this.images).join(', ') || '(none)';
-          // Enhanced error message to help debug image insertion issues
-          throw new Error(
-            `Unresolved image placeholder: {%${tagName || 'unknown'}}. ` +
-            `Looking for key: "${imageKey}" (tagValue="${tagValue}", tagName="${tagName}"). ` +
-            `Available image keys: ${availableKeys}`
-          );
+
+        // If no image was uploaded for this placeholder, fall back to a tiny
+        // transparent PNG so that image fields behave as optional and do not
+        // block preview or document generation.
+        if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) {
+          return EMPTY_IMAGE_PNG;
         }
-        
+
         return buffer;
       },
       getSize: (img) => {
@@ -83,9 +88,11 @@ export class DocxGenerator {
       },
     });
 
-    const nullGetter = (part) => {
-      const tagName = part.module ? part.value : (part.raw ?? part.value);
-      throw new Error(`Unresolved placeholder: {{${tagName}}}`);
+    const nullGetter = () => {
+      // Treat missing or null variables as empty strings so that:
+      // - Preview works even when some fields are left blank
+      // - Typos/mismatches in template placeholders do not crash generation
+      return '';
     };
 
     const doc = new Docxtemplater(zip, {

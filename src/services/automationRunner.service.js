@@ -17,9 +17,11 @@ import { getTemplateConfig } from '../templates/templateRegistry.js';
  *
  * @param {string} actionSlug - e.g. 'arrange-venue', 'arrange-accommodation', 'cancel-notary'
  * @param {Object} input - Raw form data
+ * @param {{ previewOnly?: boolean }} [options] - Flags to control strictness (e.g. relaxed rules for preview)
  * @returns {Promise<Object>} Processed data for DocxGenerator
  */
-export async function runAutomation(actionSlug, input) {
+export async function runAutomation(actionSlug, input, options = {}) {
+  const { previewOnly = false } = options;
   const config = getTemplateConfig(actionSlug);
   if (!config) throw new Error(`Unknown action: ${actionSlug}`);
 
@@ -92,7 +94,7 @@ export async function runAutomation(actionSlug, input) {
 
   switch (config.automation) {
     case 'arrangeVenue':
-      return await runArrangeVenueAutomations(data);
+      return await runArrangeVenueAutomations(data, { previewOnly });
     default:
       return data;
   }
