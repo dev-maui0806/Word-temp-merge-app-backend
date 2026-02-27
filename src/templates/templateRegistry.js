@@ -90,9 +90,19 @@ export const TEMPLATE_REGISTRY = {
     automation: 'cancelENTTest',
     fields: [],
   },
-  'no-transportation-needed': {
-    template: 'noTransportationNeeded.docx',
-    automation: 'noTransportationNeeded',
+  'contact-claimant-required-transportation': {
+    template: 'contactClaimantRequiredTransportation.docx',
+    automation: 'contactClaimant',
+    fields: [],
+  },
+  'contact-claimant-not-required-transportation': {
+    template: 'contactClaimantNotRequiredTransportation.docx',
+    automation: 'contactClaimant',
+    fields: [],
+  },
+  'contact-claimant-required-both': {
+    template: 'contactClaimantRequiredBoth.docx',
+    automation: 'contactClaimant',
     fields: [],
   },
   'contact-claimant': {
