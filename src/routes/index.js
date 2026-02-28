@@ -7,6 +7,7 @@ import contactRoutes from './contact.routes.js';
 import eventRoutes from './event.routes.js';
 import countryRoutes from './country.routes.js';
 import adminRoutes from './admin.routes.js';
+import paymentRoutes from './payment.routes.js';
 
 const router = Router();
 
@@ -22,5 +23,6 @@ router.use('/', contactRoutes);
 router.use('/', eventRoutes);
 router.use('/', arrangeVenueRoutes);
 router.use('/admin', adminRoutes);
+router.use('/payments', paymentRoutes);
 
 export default router;

@@ -5,25 +5,19 @@ import cookieParser from 'cookie-parser';
 
 import { connectDB } from './src/config/db.js';
 import routes from './src/routes/index.js';
-import stripeRoutes, { getWebhookRoute } from './src/routes/stripe.routes.js';
-import { stripeService } from './src/services/stripe.service.js';
+import { subscriptionMaintenanceService } from './src/services/subscriptionMaintenance.service.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 await connectDB();
-stripeService.runExpiryDowngrades().catch((err) => console.error('Stripe expiry check:', err));
+subscriptionMaintenanceService.runExpiryDowngrades().catch((err) => console.error('Subscription expiry check:', err));
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173', credentials: true }));
 app.use(cookieParser());
 
-// Stripe webhook needs the raw body, so mount before JSON parser
-app.post('/api/stripe/webhook', ...getWebhookRoute(express));
-
 // Allow larger JSON payloads for Arrange Venue (image uploads etc.)
 app.use(express.json({ limit: '10mb' }));
-
-app.use('/api/stripe', stripeRoutes);
 app.use('/api', routes);
 
 const server = app.listen(PORT, () => {

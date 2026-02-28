@@ -70,14 +70,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ['monthly', 'quarterly', 'yearly'],
     },
-    stripeCustomerId: {
-      type: String,
-      sparse: true,
-    },
-    stripeSubscriptionId: {
-      type: String,
-      sparse: true,
-    },
+    // Stripe fields removed; PhonePe integration does not require customer/subscription ids
     pinHash: {
       type: String,
     },
@@ -100,8 +93,6 @@ userSchema.index({ email: 1 }, { unique: true });
 userSchema.index({ mobile: 1 }, { unique: true, sparse: true });
 userSchema.index({ googleId: 1 }, { unique: true, sparse: true });
 userSchema.index({ subscriptionStatus: 1, subscriptionExpiry: 1 });
-userSchema.index({ stripeCustomerId: 1 }, { sparse: true });
-userSchema.index({ stripeSubscriptionId: 1 }, { sparse: true });
 userSchema.index({ 'devices.deviceId': 1 });
 
 const User = mongoose.model('User', userSchema);
