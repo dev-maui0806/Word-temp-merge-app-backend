@@ -15,18 +15,19 @@ export async function createCheckout(req, res) {
   }
 }
 
-// PhonePe server-to-server callback
+/**
+ * PhonePe V2 Webhook - configured in PhonePe dashboard.
+ * Expects JSON body: { event, payload }.
+ * Authorization header: SHA256 hash of (webhook_username:webhook_password).
+ */
 export async function handleCallback(req, res) {
   try {
-    const xVerify = req.headers['x-verify'];
-    const { response } = req.body || {};
-    await phonepeService.handleCallback({ xVerify, responseB64: response });
-    res.json({ ok: true });
+    const authHeader = req.headers.authorization;
+    const body = req.body || {};
+    await phonepeService.handleWebhook({ authHeader, body });
+    res.status(200).json({ ok: true });
   } catch (err) {
-    // Return 200 even on verification errors to avoid repeated retries storm,
-    // but log for diagnosis.
-    console.error('PhonePe callback error:', err.message);
+    console.error('PhonePe webhook error:', err.message);
     res.status(200).json({ ok: false });
   }
 }
-

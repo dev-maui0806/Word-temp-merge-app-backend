@@ -1,31 +1,24 @@
+/**
+ * PhonePe Payment Gateway V2 Service.
+ * Uses Client ID + Client Secret for OAuth, /checkout/v2/pay for payment creation.
+ */
+
 import crypto from 'node:crypto';
 import dayjs from 'dayjs';
 import { PHONEPE, PLANS } from '../config/phonepe.js';
 import PaymentTransaction from '../models/PaymentTransaction.js';
 import User from '../models/User.js';
 
-function sha256Hex(input) {
-  return crypto.createHash('sha256').update(input).digest('hex');
-}
-
-function base64Json(obj) {
-  return Buffer.from(JSON.stringify(obj), 'utf8').toString('base64');
-}
+let tokenCache = { accessToken: null, expiresAt: 0 };
 
 function getAppOrigin() {
   return (process.env.APP_ORIGIN || process.env.CORS_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
 }
 
-function getApiOrigin() {
-  // When deployed behind a proxy, set API_ORIGIN explicitly.
-  return (process.env.API_ORIGIN || `http://localhost:${process.env.PORT || 3000}`).replace(/\/$/, '');
-}
-
-function makeMerchantTxId() {
-  // <= 36 chars, alphanumeric + underscore only
+function makeMerchantOrderId() {
   const ts = Date.now().toString();
   const rnd = Math.floor(Math.random() * 1e6).toString().padStart(6, '0');
-  return `TX_${ts}_${rnd}`.slice(0, 36);
+  return `TX_${ts}_${rnd}`.slice(0, 63);
 }
 
 function getPlanConfig(plan) {
@@ -34,15 +27,49 @@ function getPlanConfig(plan) {
   return cfg;
 }
 
+async function getAccessToken() {
+  const now = Math.floor(Date.now() / 1000);
+  const bufferSeconds = 300; // refresh 5 min before expiry
+  if (tokenCache.accessToken && tokenCache.expiresAt > now + bufferSeconds) {
+    return tokenCache.accessToken;
+  }
+
+  const params = new URLSearchParams({
+    client_id: PHONEPE.clientId,
+    client_secret: PHONEPE.clientSecret,
+    client_version: PHONEPE.clientVersion,
+    grant_type: 'client_credentials',
+  });
+
+  const res = await fetch(PHONEPE.oauthUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`PhonePe OAuth failed (${res.status}): ${text}`);
+  }
+
+  const data = await res.json();
+  const accessToken = data.access_token || data.encrypted_access_token;
+  const expiresAt = data.expires_at || (data.issued_at || now) + (data.expires_in || 86400);
+
+  if (!accessToken) throw new Error('PhonePe OAuth: no access_token in response');
+
+  tokenCache = { accessToken, expiresAt };
+  return accessToken;
+}
+
 export const phonepeService = {
   assertConfigured() {
-    if (!PHONEPE.merchantId) throw new Error('PHONEPE_MERCHANT_ID not configured');
-    if (!PHONEPE.saltKey) throw new Error('PHONEPE_SALT_KEY not configured');
-    if (!PHONEPE.saltIndex) throw new Error('PHONEPE_SALT_INDEX not configured');
+    if (!PHONEPE.clientId) throw new Error('PHONEPE_CLIENT_ID not configured');
+    if (!PHONEPE.clientSecret) throw new Error('PHONEPE_CLIENT_SECRET not configured');
   },
 
   /**
-   * Create a PhonePe hosted-payment redirect URL (Accept Payments v3).
+   * Create a PhonePe V2 checkout session and return redirect URL.
    */
   async createHostedCheckout({ userId, plan }) {
     this.assertConfigured();
@@ -52,103 +79,108 @@ export const phonepeService = {
 
     const planCfg = getPlanConfig(plan);
     const amountPaise = planCfg.amountRupees * 100;
-    const transactionId = makeMerchantTxId();
+    const merchantOrderId = makeMerchantOrderId();
 
     await PaymentTransaction.create({
       provider: 'phonepe',
-      transactionId,
+      transactionId: merchantOrderId,
       userId: user._id,
       plan,
       amountPaise,
       status: 'INITIATED',
     });
 
-    const payload = {
-      merchantId: PHONEPE.merchantId,
-      transactionId,
-      merchantUserId: String(user._id),
-      amount: amountPaise,
-      merchantOrderId: transactionId,
-      mobileNumber: user.mobile || undefined,
-      email: user.email || undefined,
-      message: `Subscription ${planCfg.name}`,
-      shortName: user.name || user.email?.split('@')[0] || 'User',
-    };
-
-    const requestB64 = base64Json(payload);
-    const apiPath = '/v3/debit';
-    const xVerify = `${sha256Hex(requestB64 + apiPath + PHONEPE.saltKey)}###${PHONEPE.saltIndex}`;
-
-    const callbackUrl = `${getApiOrigin()}/api/payments/phonepe/callback`;
+    const accessToken = await getAccessToken();
     const redirectUrl = `${getAppOrigin()}/settings?payment=processing`;
 
-    const headers = {
-      'Content-Type': 'application/json',
-      'X-VERIFY': xVerify,
-      'X-REDIRECT-URL': redirectUrl,
-      'X-REDIRECT-MODE': 'REDIRECT',
-      'X-CALLBACK-URL': callbackUrl,
-      'X-CALL-MODE': 'POST',
+    const body = {
+      merchantOrderId,
+      amount: amountPaise,
+      expireAfter: 1200,
+      paymentFlow: {
+        type: 'PG_CHECKOUT',
+        message: `Subscription ${planCfg.name}`,
+        merchantUrls: {
+          redirectUrl,
+        },
+      },
+      metaInfo: {
+        udf1: String(user._id),
+        udf2: plan,
+      },
     };
-    if (PHONEPE.providerId) headers['X-PROVIDER-ID'] = PHONEPE.providerId;
 
-    const res = await fetch(`${PHONEPE.apiBaseUrl}${apiPath}`, {
+    const res = await fetch(PHONEPE.payUrl, {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ request: requestB64 }),
-      redirect: 'manual',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `O-Bearer ${accessToken}`,
+      },
+      body: JSON.stringify(body),
     });
 
-    // PhonePe responds with 302 + Location header containing /transact?token=...
-    const location = res.headers.get('location') || res.headers.get('Location');
-    if (!location) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`PhonePe checkout failed (status ${res.status}) ${text}`.trim());
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      throw new Error(
+        data.message || data.code || `PhonePe checkout failed (${res.status})`
+      );
     }
 
-    const url = location.startsWith('http') ? location : `${PHONEPE.redirectHost}${location}`;
-    return { url, transactionId };
+    const payRedirectUrl = data.redirectUrl;
+    if (!payRedirectUrl) {
+      throw new Error('PhonePe did not return redirectUrl');
+    }
+
+    return { url: payRedirectUrl, transactionId: merchantOrderId };
   },
 
   /**
-   * Handle server-to-server callback from PhonePe.
-   * Expects: { response: "<base64>" }
+   * Handle V2 webhook callback from PhonePe.
+   * Configure webhook URL in PhonePe dashboard; use PHONEPE_WEBHOOK_USERNAME and PHONEPE_WEBHOOK_PASSWORD for verification.
    */
-  async handleCallback({ xVerify, responseB64 }) {
-    this.assertConfigured();
-    if (!responseB64 || typeof responseB64 !== 'string') {
-      throw new Error('Missing callback response');
-    }
-
-    const expectedPrefix = `${sha256Hex(responseB64 + PHONEPE.saltKey)}###${PHONEPE.saltIndex}`;
-    const normalized = String(xVerify || '').trim();
-    if (!normalized || normalized !== expectedPrefix) {
-      throw new Error('Invalid callback signature');
-    }
-
-    const decodedJson = JSON.parse(Buffer.from(responseB64, 'base64').toString('utf8'));
-    const txId = decodedJson?.data?.transactionId;
-    if (!txId) throw new Error('Callback missing transactionId');
-
-    const txn = await PaymentTransaction.findOne({ provider: 'phonepe', transactionId: txId });
-    if (!txn) {
-      // Best-effort: ignore unknown tx (could be old) but don't crash callback retries.
+  async handleWebhook({ authHeader, body }) {
+    if (!PHONEPE.webhookUsername || !PHONEPE.webhookPassword) {
+      console.warn('PhonePe webhook: PHONEPE_WEBHOOK_USERNAME/PASSWORD not configured');
       return { ok: true };
     }
 
-    const code = decodedJson?.code;
-    const paymentState = decodedJson?.data?.paymentState;
-    const providerReferenceId = decodedJson?.data?.providerReferenceId;
-    const payResponseCode = decodedJson?.data?.payResponseCode;
+    const expectedHash = crypto
+      .createHash('sha256')
+      .update(`${PHONEPE.webhookUsername}:${PHONEPE.webhookPassword}`)
+      .digest('hex')
+      .toLowerCase();
+    const received = String(authHeader || '').replace(/^SHA256\s*/i, '').trim().toLowerCase();
+    if (received !== expectedHash) {
+      throw new Error('Invalid webhook signature');
+    }
 
+    const event = body?.event;
+    const payload = body?.payload;
+    if (!event || !payload) {
+      throw new Error('Missing event or payload');
+    }
+
+    const merchantOrderId = payload.merchantOrderId;
+    if (!merchantOrderId) {
+      return { ok: true };
+    }
+
+    const txn = await PaymentTransaction.findOne({
+      provider: 'phonepe',
+      transactionId: merchantOrderId,
+    });
+    if (!txn) {
+      return { ok: true };
+    }
+
+    const state = payload.state;
     const isSuccess =
-      code === 'PAYMENT_SUCCESS' &&
-      (paymentState === 'COMPLETED' || paymentState === 'COMPLETED '); // defensive
+      event === 'checkout.order.completed' && state === 'COMPLETED';
 
-    txn.providerReferenceId = providerReferenceId || txn.providerReferenceId;
-    txn.paymentState = paymentState || txn.paymentState;
-    txn.payResponseCode = payResponseCode || txn.payResponseCode;
-    txn.rawCallback = decodedJson;
+    txn.paymentState = state;
+    txn.providerReferenceId = payload.orderId || txn.providerReferenceId;
+    txn.rawCallback = body;
     txn.status = isSuccess ? 'SUCCESS' : 'FAILED';
     await txn.save();
 
@@ -165,4 +197,3 @@ export const phonepeService = {
     return { ok: true };
   },
 };
-
