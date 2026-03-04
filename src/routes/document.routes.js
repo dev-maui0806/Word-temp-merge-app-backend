@@ -5,6 +5,7 @@ import { requireAuth } from '../middlewares/auth.js';
 const router = Router();
 
 router.get('/documents', requireAuth, documentController.listDocuments);
+router.get('/documents/claimants', requireAuth, documentController.listClaimantNames);
 router.get('/documents/:id/file', requireAuth, documentController.getDocumentFile);
 router.get('/documents/:id', requireAuth, documentController.getDocument);
 

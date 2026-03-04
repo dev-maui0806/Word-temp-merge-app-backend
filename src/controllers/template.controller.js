@@ -17,6 +17,39 @@ import { extractTextFromDocx } from '../utils/docxTextExtract.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function slugToTitle(slug = '') {
+  return String(slug)
+    .split('-')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+function buildFolderName(eventDateIso, claimantName) {
+  if (!eventDateIso) return '';
+  const d = new Date(eventDateIso);
+  if (Number.isNaN(d.getTime())) return '';
+  const monthNames = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  const month = monthNames[d.getMonth()];
+  const day = d.getDate(); // 1–31, no leading zero
+  const year = d.getFullYear();
+  const name = (claimantName || '').trim() || 'Unknown';
+  return `${month} ${day} ${name} ${year}`;
+}
+
 /**
  * GET /templates/:actionSlug/metadata
  * Returns form field definitions for the given action.
@@ -73,7 +106,7 @@ export async function generateDocument(req, res) {
     // CRITICAL: Normalize image keys by stripping '%' prefix to match ImageModule behavior
     // ImageModule strips '%' when parsing {{%logo}}, so it looks for "logo" not "%logo"
     // This ensures consistent image insertion across ALL action types (arrange-venue, cancel-venue, etc.)
-    const { images = {}, ...variables } = req.body;
+    const { images = {}, imageLayout = {}, ...variables } = req.body;
     const sanitizedImages = {};
     const base64Regex = /^data:image\/[\w.+.-]+;base64,/;
     for (const [key, val] of Object.entries(images)) {
@@ -95,6 +128,23 @@ export async function generateDocument(req, res) {
       }
     }
 
+    // Sanitize imageLayout (optional): { [imageKey]: { widthPercent?: number, widthPx?: number, heightPx?: number } }
+    const sanitizedImageLayout = {};
+    if (imageLayout && typeof imageLayout === 'object') {
+      for (const [key, val] of Object.entries(imageLayout)) {
+        if (!key || typeof key !== 'string' || !val || typeof val !== 'object') continue;
+        const normalizedKey = key.startsWith('%') ? key.substring(1) : key;
+        const widthPercent = Number(val.widthPercent);
+        const widthPx = Number(val.widthPx);
+        const heightPx = Number(val.heightPx);
+        sanitizedImageLayout[normalizedKey] = {
+          ...(Number.isFinite(widthPercent) ? { widthPercent } : {}),
+          ...(Number.isFinite(widthPx) ? { widthPx } : {}),
+          ...(Number.isFinite(heightPx) ? { heightPx } : {}),
+        };
+      }
+    }
+
     // Run automation to get processed data
     // IMPORTANT:
     // - Images are handled separately and passed directly to DocxGenerator.
@@ -108,11 +158,11 @@ export async function generateDocument(req, res) {
     let buffer;
     if (previewOnly || !downloadCheck.allowed) {
       const maskedData = previewMaskingService.maskData(data);
-      const generator = new DocxGenerator(templatePath, maskedData, sanitizedImages);
+      const generator = new DocxGenerator(templatePath, maskedData, sanitizedImages, sanitizedImageLayout);
       buffer = generator.generate();
       buffer = previewMaskingService.injectBanner(buffer);
     } else {
-      const generator = new DocxGenerator(templatePath, data, sanitizedImages);
+      const generator = new DocxGenerator(templatePath, data, sanitizedImages, sanitizedImageLayout);
       buffer = generator.generate();
       if (user.subscriptionStatus === 'trial') {
         await User.findByIdAndUpdate(userId, {
@@ -126,11 +176,30 @@ export async function generateDocument(req, res) {
     // Store document in history with merged text and DOCX file (for File Storage preview/download)
     if (!previewOnly && downloadCheck.allowed) {
       const contentText = extractTextFromDocx(buffer);
+
+      // Enriched metadata for File Manager:
+      // - claimantName from data.Claimant_Name
+      // - eventDate/eventDateDisplay from original Event_Date input (ISO) when available
+      const claimantName = (data.Claimant_Name || variables.Claimant_Name || '').trim() || undefined;
+      const eventDateIso = typeof variables.Event_Date === 'string' ? variables.Event_Date : undefined;
+      const eventDate = eventDateIso ? new Date(eventDateIso) : undefined;
+      const folderName = buildFolderName(eventDateIso, claimantName);
+      const eventDateDisplay =
+        eventDate && !Number.isNaN(eventDate.getTime())
+          ? `${eventDate.toLocaleString('en-US', { month: 'long' })} ${eventDate.getDate()} ${eventDate.getFullYear()}`
+          : undefined;
+      const eventType = slugToTitle(actionSlug);
+
       await Document.create({
         userId: user._id,
         actionSlug,
         content: contentText,
         fileBuffer: buffer,
+        folderName: folderName || undefined,
+        claimantName,
+        eventDate: eventDate && !Number.isNaN(eventDate.getTime()) ? eventDate : undefined,
+        eventDateDisplay,
+        eventType,
       });
     }
 

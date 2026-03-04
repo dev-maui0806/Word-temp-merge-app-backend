@@ -25,11 +25,13 @@ export class DocxGenerator {
    * @param {string} templatePath - Absolute or relative path to .docx template
    * @param {Object} data - Variable data for placeholders
    * @param {Object} [images] - Map of placeholder names to Buffers, e.g. { logo: Buffer }
+   * @param {Object} [imageLayout] - Optional per-image layout config, e.g. { logo: { widthPercent: 60 } }
    */
-  constructor(templatePath, data = {}, images = {}) {
+  constructor(templatePath, data = {}, images = {}, imageLayout = {}) {
     this.templatePath = path.resolve(templatePath);
     this.data = { ...data };
     this.images = { ...images };
+    this.imageLayout = imageLayout && typeof imageLayout === 'object' ? { ...imageLayout } : {};
   }
 
   /**
@@ -43,6 +45,12 @@ export class DocxGenerator {
 
     const content = fs.readFileSync(this.templatePath, 'binary');
     const zip = new PizZip(content);
+
+    // Default "fit within margins" sizing.
+    // NOTE: docxtemplater-image-module expects pixel sizes.
+    // We pick conservative defaults that prevent oversized images in typical Word docs.
+    const DEFAULT_MAX_WIDTH_PX = 600;
+    const DEFAULT_MAX_HEIGHT_PX = 750;
 
     const imageModule = new ImageModule({
       fileType: 'docx',
@@ -72,7 +80,7 @@ export class DocxGenerator {
 
         return buffer;
       },
-      getSize: (img) => {
+      getSize: (img, tagValue, tagName) => {
         let w = 300;
         let h = 200;
         try {
@@ -84,7 +92,45 @@ export class DocxGenerator {
         } catch {
           /* image-size may fail for some formats */
         }
-        return [w, h];
+
+        const key = tagName || tagValue;
+        const layout = key && this.imageLayout ? this.imageLayout[key] : undefined;
+
+        // User-provided sizing (optional). We accept widthPercent (preferred) and widthPx/heightPx.
+        // - widthPercent is interpreted as % of the default max width (content width proxy).
+        // - We keep aspect ratio unless both width and height are provided.
+        if (layout && typeof layout === 'object') {
+          const widthPercent = Number(layout.widthPercent);
+          const widthPx = Number(layout.widthPx);
+          const heightPx = Number(layout.heightPx);
+
+          // widthPercent: 1..100
+          if (Number.isFinite(widthPercent) && widthPercent > 0) {
+            const maxW = DEFAULT_MAX_WIDTH_PX;
+            const targetW = Math.max(1, Math.round((Math.min(100, widthPercent) / 100) * maxW));
+            const ratio = targetW / w;
+            return [targetW, Math.max(1, Math.round(h * ratio))];
+          }
+
+          // Explicit px sizing (rare). If only one dimension provided, preserve aspect ratio.
+          if (Number.isFinite(widthPx) && widthPx > 0 && Number.isFinite(heightPx) && heightPx > 0) {
+            return [Math.max(1, Math.round(widthPx)), Math.max(1, Math.round(heightPx))];
+          }
+          if (Number.isFinite(widthPx) && widthPx > 0) {
+            const ratio = widthPx / w;
+            return [Math.max(1, Math.round(widthPx)), Math.max(1, Math.round(h * ratio))];
+          }
+          if (Number.isFinite(heightPx) && heightPx > 0) {
+            const ratio = heightPx / h;
+            return [Math.max(1, Math.round(w * ratio)), Math.max(1, Math.round(heightPx))];
+          }
+        }
+
+        // Default: fit within max bounds, preserve aspect ratio (prevents "excessive zoom").
+        const maxW = DEFAULT_MAX_WIDTH_PX;
+        const maxH = DEFAULT_MAX_HEIGHT_PX;
+        const scale = Math.min(maxW / w, maxH / h, 1);
+        return [Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))];
       },
     });
 
