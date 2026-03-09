@@ -104,9 +104,10 @@ export async function runArrangeVenueAutomations(input, options = {}) {
   const data = { ...input };
 
   const country = input.Country ?? input.country;
+  const timezoneId = input.countryTimezoneId ?? input.CountryTimezoneId;
   if (country) {
     try {
-      Object.assign(data, await resolveCountryData(country));
+      Object.assign(data, await resolveCountryData(country, timezoneId));
     } catch (err) {
       console.warn(`Failed to resolve country data for ${country}:`, err.message);
     }

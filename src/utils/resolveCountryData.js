@@ -1,4 +1,5 @@
 import Country from '../models/Country.js';
+import CountryTimezone from '../models/CountryTimezone.js';
 
 /** Fallback data when DB lookup fails (e.g. migration not run) */
 const FALLBACK_DATA = {
@@ -24,11 +25,13 @@ const FALLBACK_DATA = {
 
 /**
  * Resolves country-specific data from the database.
- * Falls back to hardcoded data if DB lookup fails.
- * @param {string} country - Country name (e.g. India, UAE)
+ * For single time zone countries, use country fields; for multiple time zone countries,
+ * timezoneId is required and resolution uses the selected city/timezone row.
+ * @param {string} country - Country name (e.g. India, UAE) or code (e.g. IN, US)
+ * @param {string} [timezoneId] - Required when country has multiple time zones (e.g. selected city/timezone _id)
  * @returns {Promise<Object>} { Country_Standard_Time, Country_Code, Country_Standard_Time_Short, COUNTRY_CURRENCY_SHORT_NAME }
  */
-export async function resolveCountryData(country) {
+export async function resolveCountryData(country, timezoneId) {
   if (!country || typeof country !== 'string') {
     throw new Error('Country must be a non-empty string');
   }
@@ -36,19 +39,52 @@ export async function resolveCountryData(country) {
   const normalized = country.trim();
 
   try {
-    const doc = await Country.findOne({
+    const countryDoc = await Country.findOne({
       $or: [{ name: normalized }, { code: normalized }],
     }).lean();
 
-    if (doc) {
+    if (countryDoc) {
+      if (!countryDoc.hasMultipleTimezones) {
+        if (!countryDoc.standardTime || !countryDoc.countryCode || !countryDoc.timeShort || !countryDoc.currency) {
+          console.warn(
+            `resolveCountryData: country "${normalized}" has single TZ but missing fields, using fallback if any`
+          );
+        }
+        return {
+          Country_Standard_Time: countryDoc.standardTime || '',
+          Country_Code: countryDoc.countryCode || '',
+          Country_Standard_Time_Short: countryDoc.timeShort || '',
+          COUNTRY_CURRENCY_SHORT_NAME: countryDoc.currency || '',
+        };
+      }
+
+      // Multiple time zones: require timezoneId
+      if (!timezoneId || typeof timezoneId !== 'string') {
+        throw new Error(
+          `Country "${normalized}" has multiple time zones; please select a city/time zone.`
+        );
+      }
+
+      const tzDoc = await CountryTimezone.findOne({
+        _id: timezoneId,
+        country: countryDoc._id,
+      }).lean();
+
+      if (!tzDoc) {
+        throw new Error(`Selected city/time zone not found for country "${normalized}".`);
+      }
+
       return {
-        Country_Standard_Time: doc.standardTime,
-        Country_Code: doc.countryCode,
-        Country_Standard_Time_Short: doc.timeShort,
-        COUNTRY_CURRENCY_SHORT_NAME: doc.currency,
+        Country_Standard_Time: tzDoc.standardTime || countryDoc.standardTime || '',
+        Country_Code: tzDoc.countryCode || countryDoc.countryCode || '',
+        Country_Standard_Time_Short: tzDoc.timeShort || countryDoc.timeShort || '',
+        COUNTRY_CURRENCY_SHORT_NAME: tzDoc.currency || countryDoc.currency || '',
       };
     }
   } catch (err) {
+    if (err.message && (err.message.includes('multiple time zones') || err.message.includes('not found'))) {
+      throw err;
+    }
     console.warn('resolveCountryData DB lookup failed:', err.message);
   }
 

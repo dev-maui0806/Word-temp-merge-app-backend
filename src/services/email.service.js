@@ -1,7 +1,7 @@
 import { Resend } from 'resend';
 import { OTP_EXPIRY_MINUTES } from '../config/auth.js';
 
-const APP_NAME = process.env.APP_NAME || 'FA DOC';
+  const APP_NAME = process.env.APP_NAME || 'FA doc';
 
 let cachedResend = null;
 
@@ -38,7 +38,7 @@ export async function sendOTPEmail(toEmail, otp) {
 
   const { data, error } = await resend.emails.send({
     from,
-    to: 'maui.k0806@gmail.com',
+    to: toEmail,
     subject: `${APP_NAME} OTP Code`,
     html: otpHtml(otp),
   });

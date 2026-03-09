@@ -1,4 +1,5 @@
 import { phonepeService } from '../services/phonepe.service.js';
+import { getAllPlansWithOverrides } from '../services/subscriptionPlan.service.js';
 
 export async function createCheckout(req, res) {
   try {
@@ -29,5 +30,14 @@ export async function handleCallback(req, res) {
   } catch (err) {
     console.error('PhonePe webhook error:', err.message);
     res.status(200).json({ ok: false });
+  }
+}
+
+export async function listPlans(req, res) {
+  try {
+    const plans = await getAllPlansWithOverrides();
+    res.json(plans);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 }

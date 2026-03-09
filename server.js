@@ -6,12 +6,18 @@ import cookieParser from 'cookie-parser';
 import { connectDB } from './src/config/db.js';
 import routes from './src/routes/index.js';
 import { subscriptionMaintenanceService } from './src/services/subscriptionMaintenance.service.js';
+import { ensureDefaultSubscriptionPlans } from './src/services/subscriptionPlan.service.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 await connectDB();
-subscriptionMaintenanceService.runExpiryDowngrades().catch((err) => console.error('Subscription expiry check:', err));
+await ensureDefaultSubscriptionPlans().catch((err) =>
+  console.error('Subscription plan defaults:', err)
+);
+subscriptionMaintenanceService
+  .runExpiryDowngrades()
+  .catch((err) => console.error('Subscription expiry check:', err));
 
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173', credentials: true }));
 app.use(cookieParser());

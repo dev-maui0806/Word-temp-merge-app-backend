@@ -29,11 +29,19 @@ router.delete('/templates/:actionSlug', adminController.deleteTemplate);
 router.post('/countries', countryController.createCountry);
 router.patch('/countries/:id', countryController.updateCountry);
 router.delete('/countries/:id', countryController.deleteCountry);
+/** Country timezones (for hasMultipleTimezones countries) */
+router.post('/countries/:countryId/timezones', countryController.createCountryTimezone);
+router.patch('/countries/:countryId/timezones/:timezoneId', countryController.updateCountryTimezone);
+router.delete('/countries/:countryId/timezones/:timezoneId', countryController.deleteCountryTimezone);
 
 /** Users & documents (admin only) */
 router.get('/users', adminController.listUsers);
 router.get('/users/:userId/documents', adminController.listUserDocuments);
 router.get('/users/:userId/documents/:id', adminController.getUserDocument);
 router.get('/users/:userId/documents/:id/file', adminController.getUserDocumentFile);
+
+/** Subscription plans (admin only) */
+router.get('/subscription/plans', adminController.getSubscriptionPlans);
+router.patch('/subscription/plans/:planId', adminController.updateSubscriptionPlan);
 
 export default router;

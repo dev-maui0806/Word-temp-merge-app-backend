@@ -10,6 +10,7 @@ import HTMLToDOCX from 'html-to-docx';
 import { TEMPLATE_REGISTRY, getTemplatePath } from '../templates/templateRegistry.js';
 import User from '../models/User.js';
 import Document from '../models/Document.js';
+import { getAllPlansWithOverrides, updatePlanPrice } from '../services/subscriptionPlan.service.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATES_DIR = path.join(__dirname, '../templates');
@@ -271,5 +272,39 @@ export async function getUserDocumentFile(req, res) {
     res.send(buf);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * GET /admin/subscription/plans
+ * Return all subscription plans with current prices (including overrides from DB).
+ */
+export async function getSubscriptionPlans(req, res) {
+  try {
+    const plans = await getAllPlansWithOverrides();
+    res.json(plans);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * PATCH /admin/subscription/plans/:planId
+ * Update the price for a specific subscription plan.
+ */
+export async function updateSubscriptionPlan(req, res) {
+  try {
+    const { planId } = req.params;
+    const { amountRupees } = req.body || {};
+
+    const parsedAmount = Number(amountRupees);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      return res.status(400).json({ error: 'amountRupees must be a positive number' });
+    }
+
+    const updated = await updatePlanPrice(planId, parsedAmount);
+    res.json(updated);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
   }
 }

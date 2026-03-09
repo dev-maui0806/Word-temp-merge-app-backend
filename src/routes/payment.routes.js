@@ -5,6 +5,8 @@ import * as phonepeController from '../controllers/phonepe.controller.js';
 
 const router = Router();
 
+router.get('/plans', phonepeController.listPlans);
+
 router.post('/phonepe/checkout', requireAuth, enforcePinRestrictions, phonepeController.createCheckout);
 
 // Callback is called by PhonePe servers (no auth)

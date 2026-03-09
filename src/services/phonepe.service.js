@@ -5,9 +5,10 @@
 
 import crypto from 'node:crypto';
 import dayjs from 'dayjs';
-import { PHONEPE, PLANS } from '../config/phonepe.js';
+import { PHONEPE } from '../config/phonepe.js';
 import PaymentTransaction from '../models/PaymentTransaction.js';
 import User from '../models/User.js';
+import { getEffectivePlanConfig } from './subscriptionPlan.service.js';
 
 let tokenCache = { accessToken: null, expiresAt: 0 };
 
@@ -19,12 +20,6 @@ function makeMerchantOrderId() {
   const ts = Date.now().toString();
   const rnd = Math.floor(Math.random() * 1e6).toString().padStart(6, '0');
   return `TX_${ts}_${rnd}`.slice(0, 63);
-}
-
-function getPlanConfig(plan) {
-  const cfg = PLANS[plan];
-  if (!cfg) throw new Error('Invalid plan');
-  return cfg;
 }
 
 async function getAccessToken() {
@@ -77,7 +72,7 @@ export const phonepeService = {
     const user = await User.findById(userId).select('_id email name mobile');
     if (!user) throw new Error('User not found');
 
-    const planCfg = getPlanConfig(plan);
+    const planCfg = await getEffectivePlanConfig(plan);
     const amountPaise = planCfg.amountRupees * 100;
     const merchantOrderId = makeMerchantOrderId();
 
@@ -185,7 +180,7 @@ export const phonepeService = {
     await txn.save();
 
     if (isSuccess) {
-      const planCfg = getPlanConfig(txn.plan);
+      const planCfg = await getEffectivePlanConfig(txn.plan);
       const expiry = dayjs().add(planCfg.months, 'month').toDate();
       await User.findByIdAndUpdate(txn.userId, {
         subscriptionStatus: 'active',

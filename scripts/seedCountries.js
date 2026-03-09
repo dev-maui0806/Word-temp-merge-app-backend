@@ -12,9 +12,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const INITIAL_COUNTRIES = [
-  { name: 'India', code: 'IN', label: 'IN India', standardTime: 'Indian Standard Time (IST)', countryCode: '+91', timeShort: 'IST', currency: 'INR', order: 0 },
-  { name: 'UAE', code: 'AE', label: 'AE UAE', standardTime: 'Gulf Standard Time (GST)', countryCode: '+971', timeShort: 'GST', currency: 'AED', order: 1 },
-  { name: 'Australia', code: 'AU', label: 'AU Australia', standardTime: 'Australian Eastern Standard Time (AEST)', countryCode: '+61', timeShort: 'AEST', currency: 'AUD', order: 2 },
+  { name: 'India', code: 'IN', label: 'IN India', hasMultipleTimezones: false, standardTime: 'India Standard Time', countryCode: '+91', timeShort: 'IST', currency: 'INR', order: 0 },
+  { name: 'UAE', code: 'AE', label: 'AE UAE', hasMultipleTimezones: false, standardTime: 'Gulf Standard Time (GST)', countryCode: '+971', timeShort: 'GST', currency: 'AED', order: 1 },
+  { name: 'Australia', code: 'AU', label: 'AU Australia', hasMultipleTimezones: false, standardTime: 'Australian Eastern Standard Time (AEST)', countryCode: '+61', timeShort: 'AEST', currency: 'AUD', order: 2 },
 ];
 
 async function seed() {

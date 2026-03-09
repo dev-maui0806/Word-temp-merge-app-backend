@@ -29,9 +29,10 @@ export async function runAutomation(actionSlug, input, options = {}) {
 
   // Common for all actions: country-derived fields (Country_Standard_Time, etc.)
   const country = input.Country ?? input.country;
+  const timezoneId = input.countryTimezoneId ?? input.CountryTimezoneId;
   if (country) {
     try {
-      Object.assign(data, await resolveCountryData(country));
+      Object.assign(data, await resolveCountryData(country, timezoneId));
     } catch (err) {
       // If country resolution fails, continue without it
       console.warn(`Failed to resolve country data for ${country}:`, err.message);
