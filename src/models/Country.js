@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 const countrySchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true, unique: true },
-    code: { type: String, required: true, trim: true, uppercase: true, unique: true },
+    code: { type: String, required: true, trim: true, uppercase: true },
     label: { type: String, required: true, trim: true },
     /** When false, use standardTime/countryCode/timeShort/currency on this document. When true, user must pick a city from CountryTimezone. */
     hasMultipleTimezones: { type: Boolean, default: false },
@@ -16,6 +16,7 @@ const countrySchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+countrySchema.index({ name: 1 }, { unique: true });
 
 const Country = mongoose.model('Country', countrySchema);
 

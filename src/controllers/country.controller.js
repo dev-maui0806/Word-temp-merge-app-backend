@@ -63,6 +63,7 @@ export async function listCountryTimezones(req, res) {
  */
 export async function createCountry(req, res) {
   try {
+    console.log(req.body);
     const { name, code, label, hasMultipleTimezones, standardTime, countryCode, timeShort, currency, order } =
       req.body;
     if (!name || !code) {
@@ -100,7 +101,7 @@ export async function createCountry(req, res) {
     });
   } catch (err) {
     if (err.code === 11000) {
-      return res.status(400).json({ error: 'Country with this name or code already exists' });
+      return res.status(400).json({ error: 'Country with this name already exists' });
     }
     res.status(400).json({ error: err.message });
   }
@@ -111,6 +112,7 @@ export async function createCountry(req, res) {
  * Update a country (admin only).
  */
 export async function updateCountry(req, res) {
+  console.log(req.body);
   try {
     const country = await Country.findById(req.params.id);
     if (!country) return res.status(404).json({ error: 'Country not found' });
@@ -148,7 +150,7 @@ export async function updateCountry(req, res) {
     });
   } catch (err) {
     if (err.code === 11000) {
-      return res.status(400).json({ error: 'Country with this name or code already exists' });
+      return res.status(400).json({ error: 'Country with this name  already exists' });
     }
     res.status(400).json({ error: err.message });
   }
