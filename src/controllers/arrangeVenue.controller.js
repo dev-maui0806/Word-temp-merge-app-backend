@@ -4,7 +4,7 @@ import { runArrangeVenueAutomations } from '../services/arrangeVenue.service.js'
 import { DocxGenerator } from '../services/docxGenerator.service.js';
 import { previewMaskingService } from '../services/previewMasking.service.js';
 import { applyDocumentFontFormat } from '../services/docxFontFormatter.service.js';
-import { canDownloadFullDocx } from '../utils/subscriptionUtils.js';
+import { canDownloadFullDocx, isAdmin } from '../utils/subscriptionUtils.js';
 import User from '../models/User.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -57,8 +57,11 @@ export async function generateArrangeVenue(req, res) {
 
     const data = runArrangeVenueAutomations(variables);
 
+    const adminUser = isAdmin(user);
+    const shouldMask = !adminUser && (previewOnly || !downloadCheck.allowed);
+
     let buffer;
-    if (previewOnly || !downloadCheck.allowed) {
+    if (shouldMask) {
       const maskedData = previewMaskingService.maskData(data);
       const generator = new DocxGenerator(TEMPLATE_PATH, maskedData, sanitizedImages);
       buffer = generator.generate();
@@ -66,7 +69,7 @@ export async function generateArrangeVenue(req, res) {
     } else {
       const generator = new DocxGenerator(TEMPLATE_PATH, data, sanitizedImages);
       buffer = generator.generate();
-      if (user.subscriptionStatus === 'trial') {
+      if (!adminUser && user.subscriptionStatus === 'trial') {
         await User.findByIdAndUpdate(userId, {
           $inc: { trialDocCount: 1 },
         });

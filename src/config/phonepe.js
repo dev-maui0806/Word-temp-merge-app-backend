@@ -5,6 +5,7 @@
 
 export const PHONEPE = {
   env: (process.env.PHONEPE_ENV || 'UAT').toUpperCase(), // UAT | PROD
+  mode: (process.env.PHONEPE_MODE || 'LIVE').toUpperCase(), // LIVE | MOCK
   clientId: process.env.PHONEPE_CLIENT_ID || '',
   clientSecret: process.env.PHONEPE_CLIENT_SECRET || '',
   clientVersion: process.env.PHONEPE_CLIENT_VERSION || '1',
@@ -18,6 +19,10 @@ export const PHONEPE = {
     (process.env.PHONEPE_ENV || 'UAT').toUpperCase() === 'PROD'
       ? 'https://api.phonepe.com/apis/pg/checkout/v2/pay'
       : 'https://api-preprod.phonepe.com/apis/pg-sandbox/checkout/v2/pay',
+  orderStatusBaseUrl:
+    (process.env.PHONEPE_ENV || 'UAT').toUpperCase() === 'PROD'
+      ? 'https://api.phonepe.com/apis/pg/checkout/v2/order'
+      : 'https://api-preprod.phonepe.com/apis/pg-sandbox/checkout/v2/order',
 };
 
 export const PLANS = {

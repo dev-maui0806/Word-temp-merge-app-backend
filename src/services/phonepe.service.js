@@ -16,6 +16,15 @@ function getAppOrigin() {
   return (process.env.APP_ORIGIN || process.env.CORS_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
 }
 
+function phonepeHeaders(extra = {}) {
+  // PhonePe endpoints sit behind Cloudflare; a missing/empty User-Agent can trigger 403 blocks.
+  return {
+    Accept: 'application/json',
+    'User-Agent': process.env.PHONEPE_USER_AGENT || 'fieldagentreport/1.0',
+    ...extra,
+  };
+}
+
 function makeMerchantOrderId() {
   const ts = Date.now().toString();
   const rnd = Math.floor(Math.random() * 1e6).toString().padStart(6, '0');
@@ -38,7 +47,7 @@ async function getAccessToken() {
 
   const res = await fetch(PHONEPE.oauthUrl, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: phonepeHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
     body: params.toString(),
   });
 
@@ -57,8 +66,32 @@ async function getAccessToken() {
   return accessToken;
 }
 
+function normalizeAuthHeader(authHeader) {
+  const raw = String(authHeader || '').trim();
+  // Some docs/systems prefix with "SHA256", others send only the hex hash.
+  return raw.replace(/^SHA256\s*/i, '').trim().toLowerCase();
+}
+
+function mapPhonePeStateToTxnStatus(state) {
+  const s = String(state || '').toUpperCase();
+  if (s === 'COMPLETED') return 'SUCCESS';
+  if (s === 'FAILED') return 'FAILED';
+  return 'INITIATED';
+}
+
+async function activateSubscriptionFromTxn(txn) {
+  const planCfg = await getEffectivePlanConfig(txn.plan);
+  const expiry = dayjs().add(planCfg.months, 'month').toDate();
+  await User.findByIdAndUpdate(txn.userId, {
+    subscriptionStatus: 'active',
+    subscriptionPlan: txn.plan,
+    subscriptionExpiry: expiry,
+  });
+}
+
 export const phonepeService = {
   assertConfigured() {
+    if (PHONEPE.mode === 'MOCK') return;
     if (!PHONEPE.clientId) throw new Error('PHONEPE_CLIENT_ID not configured');
     if (!PHONEPE.clientSecret) throw new Error('PHONEPE_CLIENT_SECRET not configured');
   },
@@ -85,8 +118,15 @@ export const phonepeService = {
       status: 'INITIATED',
     });
 
+    const redirectUrl = `${getAppOrigin()}/checkout?transactionId=${encodeURIComponent(merchantOrderId)}`;
+
+    // MOCK mode: skip PhonePe and return to app for simulated completion.
+    if (PHONEPE.mode === 'MOCK') {
+      const url = `${redirectUrl}&mock=1`;
+      return { url, transactionId: merchantOrderId };
+    }
+
     const accessToken = await getAccessToken();
-    const redirectUrl = `${getAppOrigin()}/settings?payment=processing`;
 
     const body = {
       merchantOrderId,
@@ -108,8 +148,10 @@ export const phonepeService = {
     const res = await fetch(PHONEPE.payUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: `O-Bearer ${accessToken}`,
+        ...phonepeHeaders({
+          'Content-Type': 'application/json',
+          Authorization: `O-Bearer ${accessToken}`,
+        }),
       },
       body: JSON.stringify(body),
     });
@@ -131,6 +173,72 @@ export const phonepeService = {
   },
 
   /**
+   * Fetch order status from PhonePe (recommended fallback if webhook is delayed/missed).
+   */
+  async fetchOrderStatus({ merchantOrderId }) {
+    this.assertConfigured();
+    if (!merchantOrderId) throw new Error('merchantOrderId required');
+
+    if (PHONEPE.mode === 'MOCK') {
+      const txn = await PaymentTransaction.findOne({ provider: 'phonepe', transactionId: merchantOrderId });
+      if (!txn) throw new Error('Transaction not found');
+      return { state: txn.paymentState || (txn.status === 'SUCCESS' ? 'COMPLETED' : txn.status === 'FAILED' ? 'FAILED' : 'PENDING') };
+    }
+
+    const accessToken = await getAccessToken();
+    const url = `${PHONEPE.orderStatusBaseUrl}/${encodeURIComponent(merchantOrderId)}/status?details=false&errorContext=true`;
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        ...phonepeHeaders({
+          'Content-Type': 'application/json',
+          Authorization: `O-Bearer ${accessToken}`,
+        }),
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = String(data.message || data.code || '').trim();
+      // PhonePe sandbox occasionally returns 5xx with internal simulator errors
+      // when a user exits the PayPage without making any attempt. Treat as pending.
+      if (
+        res.status >= 500 ||
+        msg.includes('java.util.List.stream') ||
+        msg.includes('simulator') ||
+        msg.includes('Access denied')
+      ) {
+        return { state: 'PENDING', warning: 'PhonePe status temporarily unavailable' };
+      }
+      throw new Error(msg || `PhonePe order status failed (${res.status})`);
+    }
+    return data;
+  },
+
+  /**
+   * Sync local transaction status using PhonePe Order Status API.
+   * Safe to call repeatedly (idempotent).
+   */
+  async syncTransactionStatus({ merchantOrderId }) {
+    const txn = await PaymentTransaction.findOne({ provider: 'phonepe', transactionId: merchantOrderId });
+    if (!txn) throw new Error('Transaction not found');
+
+    const status = await this.fetchOrderStatus({ merchantOrderId });
+    const state = status?.state;
+    if (state) {
+      txn.paymentState = state;
+      txn.status = mapPhonePeStateToTxnStatus(state);
+      txn.rawCallback = status;
+      await txn.save();
+    }
+
+    if (txn.status === 'SUCCESS') {
+      await activateSubscriptionFromTxn(txn);
+    }
+
+    return txn;
+  },
+
+  /**
    * Handle V2 webhook callback from PhonePe.
    * Configure webhook URL in PhonePe dashboard; use PHONEPE_WEBHOOK_USERNAME and PHONEPE_WEBHOOK_PASSWORD for verification.
    */
@@ -145,7 +253,7 @@ export const phonepeService = {
       .update(`${PHONEPE.webhookUsername}:${PHONEPE.webhookPassword}`)
       .digest('hex')
       .toLowerCase();
-    const received = String(authHeader || '').replace(/^SHA256\s*/i, '').trim().toLowerCase();
+    const received = normalizeAuthHeader(authHeader);
     if (received !== expectedHash) {
       throw new Error('Invalid webhook signature');
     }
@@ -170,25 +278,38 @@ export const phonepeService = {
     }
 
     const state = payload.state;
-    const isSuccess =
-      event === 'checkout.order.completed' && state === 'COMPLETED';
+    const newStatus = mapPhonePeStateToTxnStatus(state);
 
     txn.paymentState = state;
     txn.providerReferenceId = payload.orderId || txn.providerReferenceId;
     txn.rawCallback = body;
-    txn.status = isSuccess ? 'SUCCESS' : 'FAILED';
+    txn.status = newStatus;
     await txn.save();
 
-    if (isSuccess) {
-      const planCfg = await getEffectivePlanConfig(txn.plan);
-      const expiry = dayjs().add(planCfg.months, 'month').toDate();
-      await User.findByIdAndUpdate(txn.userId, {
-        subscriptionStatus: 'active',
-        subscriptionPlan: txn.plan,
-        subscriptionExpiry: expiry,
-      });
+    if (txn.status === 'SUCCESS') {
+      await activateSubscriptionFromTxn(txn);
     }
 
     return { ok: true };
+  },
+
+  /**
+   * MOCK-only helper to simulate a callback without PhonePe.
+   */
+  async mockSettle({ merchantOrderId, state }) {
+    if (PHONEPE.mode !== 'MOCK') {
+      throw new Error('Mock settle is disabled (PHONEPE_MODE must be MOCK)');
+    }
+    const txn = await PaymentTransaction.findOne({ provider: 'phonepe', transactionId: merchantOrderId });
+    if (!txn) throw new Error('Transaction not found');
+    const normalized = String(state || '').toUpperCase();
+    txn.paymentState = normalized;
+    txn.status = mapPhonePeStateToTxnStatus(normalized);
+    txn.rawCallback = { mock: true, state: normalized };
+    await txn.save();
+    if (txn.status === 'SUCCESS') {
+      await activateSubscriptionFromTxn(txn);
+    }
+    return txn;
   },
 };

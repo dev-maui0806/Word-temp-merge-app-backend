@@ -9,7 +9,7 @@ import { runAutomation } from '../services/automationRunner.service.js';
 import { DocxGenerator } from '../services/docxGenerator.service.js';
 import { previewMaskingService } from '../services/previewMasking.service.js';
 import { applyDocumentFontFormat } from '../services/docxFontFormatter.service.js';
-import { canDownloadFullDocx } from '../utils/subscriptionUtils.js';
+import { canDownloadFullDocx, isAdmin } from '../utils/subscriptionUtils.js';
 import { getTemplatePath } from '../templates/templateRegistry.js';
 import User from '../models/User.js';
 import Document from '../models/Document.js';
@@ -155,8 +155,12 @@ export async function generateDocument(req, res) {
     // Generate document - EXACT same logic as arrange-venue controller (line-by-line match)
     // Pass sanitizedImages directly to DocxGenerator - this is the key to image insertion
     // Image keys are normalized (without % prefix) to match ImageModule's expectations
+    // Admins: full document and preview, no masking, no trial count increment
+    const adminUser = isAdmin(user);
+    const shouldMask = !adminUser && (previewOnly || !downloadCheck.allowed);
+
     let buffer;
-    if (previewOnly || !downloadCheck.allowed) {
+    if (shouldMask) {
       const maskedData = previewMaskingService.maskData(data);
       const generator = new DocxGenerator(templatePath, maskedData, sanitizedImages, sanitizedImageLayout);
       buffer = generator.generate();
@@ -164,7 +168,7 @@ export async function generateDocument(req, res) {
     } else {
       const generator = new DocxGenerator(templatePath, data, sanitizedImages, sanitizedImageLayout);
       buffer = generator.generate();
-      if (user.subscriptionStatus === 'trial') {
+      if (!adminUser && user.subscriptionStatus === 'trial') {
         await User.findByIdAndUpdate(userId, {
           $inc: { trialDocCount: 1 },
         });
