@@ -5,6 +5,7 @@
 
 import Country from '../models/Country.js';
 import CountryTimezone from '../models/CountryTimezone.js';
+import { getCurrentCountryTime } from '../utils/countryTime.js';
 
 /**
  * GET /countries
@@ -23,6 +24,7 @@ export async function listCountries(req, res) {
       countryCode: c.countryCode ?? null,
       timeShort: c.timeShort ?? null,
       currency: c.currency ?? null,
+      ianaTimeZone: c.ianaTimeZone ?? null,
       order: c.order ?? 0,
     }));
     res.json(list);
@@ -49,11 +51,27 @@ export async function listCountryTimezones(req, res) {
       timeShort: t.timeShort,
       countryCode: t.countryCode ?? null,
       currency: t.currency ?? null,
+      ianaTimeZone: t.ianaTimeZone ?? null,
       order: t.order ?? 0,
     }));
     res.json(list);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * GET /countries/current-time
+ * Returns greeting and formatted date for the selected country (and optional timezoneId),
+ * computed on the server using the country's standard time / IANA time zone.
+ */
+export async function getCountryCurrentTime(req, res) {
+  try {
+    const { country, timezoneId } = req.query;
+    const data = await getCurrentCountryTime(country, timezoneId);
+    res.json(data);
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err.message });
   }
 }
 
@@ -98,6 +116,7 @@ export async function createCountry(req, res) {
       timeShort: country.timeShort,
       currency: country.currency,
       order: country.order,
+      ianaTimeZone: country.ianaTimeZone ?? null,
     });
   } catch (err) {
     if (err.code === 11000) {
@@ -117,7 +136,18 @@ export async function updateCountry(req, res) {
     const country = await Country.findById(req.params.id);
     if (!country) return res.status(404).json({ error: 'Country not found' });
 
-    const { name, code, label, hasMultipleTimezones, standardTime, countryCode, timeShort, currency, order } =
+    const {
+      name,
+      code,
+      label,
+      hasMultipleTimezones,
+      standardTime,
+      countryCode,
+      timeShort,
+      currency,
+      order,
+      ianaTimeZone,
+    } =
       req.body;
     if (name !== undefined) country.name = String(name).trim();
     if (code !== undefined) country.code = String(code).trim().toUpperCase();
@@ -128,6 +158,9 @@ export async function updateCountry(req, res) {
     if (timeShort !== undefined) country.timeShort = timeShort ? String(timeShort).trim() : null;
     if (currency !== undefined) country.currency = currency ? String(currency).trim() : null;
     if (order !== undefined) country.order = Number(order) || 0;
+    if (ianaTimeZone !== undefined) {
+      country.ianaTimeZone = ianaTimeZone ? String(ianaTimeZone).trim() : null;
+    }
 
     if (!country.hasMultipleTimezones && (!country.standardTime || !country.countryCode || !country.timeShort || !country.currency)) {
       return res.status(400).json({
@@ -147,6 +180,7 @@ export async function updateCountry(req, res) {
       timeShort: country.timeShort,
       currency: country.currency,
       order: country.order,
+      ianaTimeZone: country.ianaTimeZone ?? null,
     });
   } catch (err) {
     if (err.code === 11000) {
@@ -177,7 +211,7 @@ export async function deleteCountry(req, res) {
 export async function createCountryTimezone(req, res) {
   try {
     const { countryId } = req.params;
-    const { cityName, standardTime, timeShort, countryCode, currency, order } = req.body || {};
+    const { cityName, standardTime, timeShort, countryCode, currency, order, ianaTimeZone } = req.body || {};
     if (!cityName || !standardTime || !timeShort) {
       return res.status(400).json({
         error: 'cityName, standardTime, and timeShort are required',
@@ -192,6 +226,7 @@ export async function createCountryTimezone(req, res) {
       timeShort: String(timeShort).trim(),
       countryCode: countryCode ? String(countryCode).trim() : (country.countryCode || null),
       currency: currency ? String(currency).trim() : (country.currency || null),
+      ianaTimeZone: ianaTimeZone ? String(ianaTimeZone).trim() : null,
       order: order ?? 0,
     });
     res.status(201).json({
@@ -202,6 +237,7 @@ export async function createCountryTimezone(req, res) {
       timeShort: tz.timeShort,
       countryCode: tz.countryCode,
       currency: tz.currency,
+      ianaTimeZone: tz.ianaTimeZone ?? null,
       order: tz.order,
     });
   } catch (err) {
@@ -212,7 +248,7 @@ export async function createCountryTimezone(req, res) {
 export async function updateCountryTimezone(req, res) {
   try {
     const { timezoneId } = req.params;
-    const { cityName, standardTime, timeShort, countryCode, currency, order } = req.body || {};
+    const { cityName, standardTime, timeShort, countryCode, currency, order, ianaTimeZone } = req.body || {};
     const tz = await CountryTimezone.findById(timezoneId);
     if (!tz) return res.status(404).json({ error: 'Timezone not found' });
     if (cityName !== undefined) tz.cityName = String(cityName).trim();
@@ -221,6 +257,9 @@ export async function updateCountryTimezone(req, res) {
     if (countryCode !== undefined) tz.countryCode = countryCode ? String(countryCode).trim() : null;
     if (currency !== undefined) tz.currency = currency ? String(currency).trim() : null;
     if (order !== undefined) tz.order = Number(order) || 0;
+    if (ianaTimeZone !== undefined) {
+      tz.ianaTimeZone = ianaTimeZone ? String(ianaTimeZone).trim() : null;
+    }
     await tz.save();
     res.json({
       id: tz._id.toString(),
@@ -231,6 +270,7 @@ export async function updateCountryTimezone(req, res) {
       countryCode: tz.countryCode,
       currency: tz.currency,
       order: tz.order,
+      ianaTimeZone: tz.ianaTimeZone ?? null,
     });
   } catch (err) {
     res.status(400).json({ error: err.message });

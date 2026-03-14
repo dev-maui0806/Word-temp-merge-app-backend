@@ -76,6 +76,9 @@ async function importSingleTimezoneCountries(rows) {
     const currency = String(row.currency_code || '').trim();
     const standardTime = String(row.country_standard_time || '').trim();
     const timeShort = String(row.country_standard_time_short || '').trim();
+    const ianaTimeZone = String(
+      row.iana_time_zone || row.ianaTimeZone || row.iana_timezone || row.timezone_iana || ''
+    ).trim();
 
     const label = `${codeAlpha2} ${name}`;
 
@@ -90,6 +93,7 @@ async function importSingleTimezoneCountries(rows) {
         countryCode: phoneCode || null,
         timeShort: timeShort || null,
         currency: currency || null,
+        ianaTimeZone: ianaTimeZone || null,
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
@@ -118,6 +122,9 @@ async function importMultiTimezoneCountries(rows) {
     const fallbackCurrency = String(first.currency_code || '').trim();
 
     const label = `${codeAlpha2} ${countryName}`;
+    const firstIanaTimeZone = String(
+      first.iana_time_zone || first.ianaTimeZone || first.iana_timezone || first.timezone_iana || ''
+    ).trim();
 
     const country = await Country.findOneAndUpdate(
       { code: codeAlpha2 },
@@ -129,6 +136,7 @@ async function importMultiTimezoneCountries(rows) {
         // keep any default time info if present, but it is optional
         countryCode: fallbackPhone || undefined,
         currency: fallbackCurrency || undefined,
+        ianaTimeZone: firstIanaTimeZone || undefined,
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
@@ -145,6 +153,9 @@ async function importMultiTimezoneCountries(rows) {
       const currency = String(row.currency_code || fallbackCurrency || '').trim();
       const standardTime = String(row.country_standard_time || '').trim();
       const timeShort = String(row.country_standard_time_short || '').trim();
+      const ianaTimeZone = String(
+        row.iana_time_zone || row.ianaTimeZone || row.iana_timezone || row.timezone_iana || ''
+      ).trim();
 
       await CountryTimezone.create({
         country: country._id,
@@ -153,6 +164,7 @@ async function importMultiTimezoneCountries(rows) {
         timeShort,
         countryCode: phoneCode || null,
         currency: currency || null,
+        ianaTimeZone: ianaTimeZone || null,
         order,
       });
       order += 1;

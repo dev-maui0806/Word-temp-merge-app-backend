@@ -12,6 +12,8 @@ const countrySchema = new mongoose.Schema(
     countryCode: { type: String, trim: true },
     timeShort: { type: String, trim: true },
     currency: { type: String, trim: true },
+    /** Optional IANA timezone identifier for the country's primary time zone, e.g. "Asia/Kolkata". */
+    ianaTimeZone: { type: String, trim: true },
     order: { type: Number, default: 0 },
   },
   { timestamps: true }

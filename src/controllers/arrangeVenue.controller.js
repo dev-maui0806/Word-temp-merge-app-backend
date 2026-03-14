@@ -58,7 +58,8 @@ export async function generateArrangeVenue(req, res) {
     const data = runArrangeVenueAutomations(variables);
 
     const adminUser = isAdmin(user);
-    const shouldMask = !adminUser && (previewOnly || !downloadCheck.allowed);
+    const isTrialUser = user.subscriptionStatus === 'trial';
+    const shouldMask = !adminUser && isTrialUser && (previewOnly || !downloadCheck.allowed);
 
     let buffer;
     if (shouldMask) {

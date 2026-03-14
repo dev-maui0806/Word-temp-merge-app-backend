@@ -14,6 +14,7 @@ import { getTemplatePath } from '../templates/templateRegistry.js';
 import User from '../models/User.js';
 import Document from '../models/Document.js';
 import { extractTextFromDocx } from '../utils/docxTextExtract.js';
+import HTMLToDOCX from 'html-to-docx';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -157,7 +158,8 @@ export async function generateDocument(req, res) {
     // Image keys are normalized (without % prefix) to match ImageModule's expectations
     // Admins: full document and preview, no masking, no trial count increment
     const adminUser = isAdmin(user);
-    const shouldMask = !adminUser && (previewOnly || !downloadCheck.allowed);
+    const isTrialUser = user.subscriptionStatus === 'trial';
+    const shouldMask = !adminUser && isTrialUser && (previewOnly || !downloadCheck.allowed);
 
     let buffer;
     if (shouldMask) {
@@ -212,6 +214,46 @@ export async function generateDocument(req, res) {
       'Content-Type':
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'Content-Disposition': `attachment; filename="${safeSlug}${previewOnly ? '-preview' : ''}.docx"`,
+    });
+    res.send(buffer);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+/**
+ * POST /generate/:actionSlug/edited-docx
+ * Convert edited preview HTML to DOCX (Aptos 13pt) for download.
+ * This avoids "fake DOCX" downloads and keeps formatting consistent.
+ */
+export async function generateEditedDocx(req, res) {
+  try {
+    const { actionSlug } = req.params;
+    const userId = req.user?.id ?? req.userId;
+    if (!userId) {
+      return res.status(401).json({ error: 'User authentication required' });
+    }
+
+    const { html } = req.body || {};
+    if (!html || typeof html !== 'string' || !html.trim()) {
+      return res.status(400).json({ error: 'HTML content is required' });
+    }
+
+    // Convert HTML to DOCX. Use Aptos 13pt base settings, then enforce via style patcher.
+    // html-to-docx expects fontSize in half-points.
+    let buffer = await HTMLToDOCX(html, null, {
+      table: { row: { cantSplit: true } },
+      footer: false,
+      font: 'Aptos',
+      fontSize: 26, // 13pt
+    });
+
+    buffer = applyDocumentFontFormat(buffer);
+
+    const safeSlug = String(actionSlug || 'document').replace(/[^a-z0-9-]/gi, '-');
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'Content-Disposition': `attachment; filename="${safeSlug}-edited.docx"`,
     });
     res.send(buffer);
   } catch (err) {

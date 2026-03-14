@@ -13,6 +13,8 @@ const countryTimezoneSchema = new mongoose.Schema(
     timeShort: { type: String, required: true, trim: true },
     countryCode: { type: String, trim: true },
     currency: { type: String, trim: true },
+    /** Optional IANA timezone identifier for this specific city/time zone, e.g. "America/Sao_Paulo". */
+    ianaTimeZone: { type: String, trim: true },
     order: { type: Number, default: 0 },
   },
   { timestamps: true }

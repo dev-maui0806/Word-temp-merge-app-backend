@@ -6,5 +6,6 @@ const router = Router();
 
 router.get('/templates/:actionSlug/metadata', templateController.getTemplateMetadataHandler);
 router.post('/generate/:actionSlug', requireAuth, templateController.generateDocument);
+router.post('/generate/:actionSlug/edited-docx', requireAuth, templateController.generateEditedDocx);
 
 export default router;

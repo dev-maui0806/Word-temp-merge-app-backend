@@ -17,7 +17,8 @@ import {
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-const GMAIL_REGEX = /^[a-zA-Z0-9.+_-]+@gmail\.com$/;
+// Basic email format validation; any domain is allowed.
+const GMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
 const ADMIN_EMAIL = 'yasasrree02@gmail.com';
 
@@ -186,7 +187,7 @@ export const authService = {
   async registerWithPassword(email, password, deviceId = '', userAgent = '') {
     const normalized = String(email).toLowerCase().trim();
     if (!isGmail(normalized)) {
-      throw new Error('Only Gmail addresses are allowed. Please use your @gmail.com account.');
+      throw new Error('Please enter a valid email address.');
     }
     if (!password || typeof password !== 'string') {
       throw new Error('Password is required.');
@@ -197,7 +198,7 @@ export const authService = {
 
     const existing = await User.findOne({ email: normalized });
     if (existing) {
-      throw new Error('An account with this Gmail address already exists. Please sign in instead.');
+      throw new Error('An account with this email address already exists. Please sign in instead.');
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
