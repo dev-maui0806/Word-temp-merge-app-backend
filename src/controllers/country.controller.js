@@ -14,20 +14,84 @@ import { getCurrentCountryTime } from '../utils/countryTime.js';
 export async function listCountries(req, res) {
   try {
     const countries = await Country.find().sort({ order: 1, name: 1 }).lean();
-    const list = countries.map((c) => ({
-      id: c._id.toString(),
-      name: c.name,
-      code: c.code,
-      label: c.label ?? `${c.code} ${c.name}`,
-      hasMultipleTimezones: Boolean(c.hasMultipleTimezones),
-      standardTime: c.standardTime ?? null,
-      countryCode: c.countryCode ?? null,
-      timeShort: c.timeShort ?? null,
-      currency: c.currency ?? null,
-      ianaTimeZone: c.ianaTimeZone ?? null,
-      order: c.order ?? 0,
-    }));
-    res.json(list);
+    res.json(mapCountryList(countries));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * Helper: map Country mongoose docs to the public JSON shape used by the app.
+ */
+function mapCountryList(countries) {
+  return (countries || []).map((c) => ({
+    id: c._id.toString(),
+    name: c.name,
+    code: c.code,
+    label: c.label ?? `${c.code} ${c.name}`,
+    hasMultipleTimezones: Boolean(c.hasMultipleTimezones),
+    standardTime: c.standardTime ?? null,
+    countryCode: c.countryCode ?? null,
+    timeShort: c.timeShort ?? null,
+    currency: c.currency ?? null,
+    ianaTimeZone: c.ianaTimeZone ?? null,
+    order: c.order ?? 0,
+  }));
+}
+
+/**
+ * GET /countries/search?q=
+ * Search countries by:
+ * - country name / code / currency, OR
+ * - any city/timezone name, timeShort, or standardTime in CountryTimezone.
+ * Returns a unique list of matching countries.
+ */
+export async function searchCountries(req, res) {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) {
+      const countries = await Country.find().sort({ order: 1, name: 1 }).lean();
+      return res.json(mapCountryList(countries));
+    }
+
+    const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
+    const [countryMatches, timezoneMatches] = await Promise.all([
+      Country.find({
+        $or: [{ name: regex }, { code: regex }, { currency: regex }],
+      })
+        .sort({ order: 1, name: 1 })
+        .lean(),
+      CountryTimezone.find({
+        $or: [{ cityName: regex }, { standardTime: regex }, { timeShort: regex }],
+      })
+        .select({ country: 1 })
+        .lean(),
+    ]);
+
+    const timezoneCountryIds = Array.from(
+      new Set(timezoneMatches.map((t) => t.country.toString()))
+    );
+
+    const extraCountries =
+      timezoneCountryIds.length > 0
+        ? await Country.find({ _id: { $in: timezoneCountryIds } }).lean()
+        : [];
+
+    // Merge and deduplicate by country id
+    const byId = new Map();
+    for (const c of [...countryMatches, ...extraCountries]) {
+      byId.set(c._id.toString(), c);
+    }
+
+    const merged = Array.from(byId.values()).sort((a, b) => {
+      const ao = a.order ?? 0;
+      const bo = b.order ?? 0;
+      if (ao !== bo) return ao - bo;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
+    res.json(mapCountryList(merged));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

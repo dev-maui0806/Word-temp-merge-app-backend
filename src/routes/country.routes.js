@@ -6,6 +6,9 @@ const router = Router();
 /** Public: list countries for user CountryToggle */
 router.get('/countries', countryController.listCountries);
 
+/** Public: search countries by name/code/currency OR by city/timezone name */
+router.get('/countries/search', countryController.searchCountries);
+
 /** Public: list city/timezone options for a country (when hasMultipleTimezones) */
 router.get('/countries/:countryId/timezones', countryController.listCountryTimezones);
 
