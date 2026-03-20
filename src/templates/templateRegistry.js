@@ -13,7 +13,7 @@ const TEMPLATES_DIR = path.join(__dirname, '.');
  * Field definition for form rendering.
  * @typedef {Object} FieldDef
  * @property {string} name - Variable name (must match template placeholder)
- * @property {string} type - 'text' | 'date' | 'time' | 'number' | 'select' | 'image'
+ * @property {string} type - 'text' | 'textarea' | 'date' | 'time' | 'number' | 'select' | 'image'
  * @property {string} label - Display label
  * @property {string} [section] - Form section (e.g. 'Dates', 'Venue')
  * @property {boolean} [computed] - If true, not shown in form (backend fills)
@@ -30,19 +30,27 @@ export const TEMPLATE_REGISTRY = {
     template: 'arrangeVenue.docx',
     automation: 'arrangeVenue',
     fields: [
-      { name: 'Date_of_FR', type: 'date', label: 'Date of FR', section: 'Dates', computed: false },
-      { name: 'Event_Date', type: 'date', label: 'Event Date', section: 'Dates' },
-      { name: 'Claimant_Name', type: 'text', label: 'Claimant Name', section: 'Claimant Details', placeholder: 'Full name' },
-      { name: 'Event_Type', type: 'text', label: 'Event Type', section: 'Claimant Details', computed: false },
-      { name: 'Event_Time', type: 'time', label: 'Event Time', section: 'Times' },
-      { name: 'Start_Time_For_Booking_Venue', type: 'time', label: 'Start Time for Booking Venue', section: 'Times' },
-      { name: 'Venue_Name', type: 'text', label: 'Venue Name', section: 'Venue Information', placeholder: 'Name' },
-      { name: 'Venue_Number', type: 'text', label: 'Venue Number', section: 'Venue Information', placeholder: 'Number' },
-      { name: 'Venue_Address', type: 'text', label: 'Venue Address', section: 'Venue Information', placeholder: 'Full address' },
-      { name: 'Reception_Person_Name', type: 'text', label: 'Reception Person Name', section: 'Venue Information', placeholder: 'Contact name' },
+      // Dates — Date_of_FR is filled by automation from Event_Date (show in UI as read-only + AUTO)
+      { name: 'Date_of_FR', type: 'text', label: 'Date of FR', section: 'Dates', computed: true },
+      { name: 'Event_Date', type: 'date', label: 'Event Date', section: 'Dates', placeholder: 'mm/dd/yyyy' },
+      { name: 'Claimant_Name', type: 'text', label: 'Claimant Name', section: 'Claimant Details', placeholder: 'Enter claimant name', fullWidth: true },
+      { name: 'Venue_Name', type: 'text', label: 'Venue Name', section: 'Venue Information', placeholder: 'Enter venue name' },
+      { name: 'Venue_Number', type: 'text', label: 'Venue Number', section: 'Venue Information', placeholder: 'Enter venue number' },
+      { name: 'Reception_Person_Name', type: 'text', label: 'Reception Person Name', section: 'Venue Information', placeholder: 'Enter reception person name' },
+      { name: 'Distance_In_Kilometres', type: 'number', label: 'Distance in Kilometres', section: 'Venue Information', placeholder: 'Enter distance in kilometres' },
+      { name: 'Distance_In_Miles', type: 'text', label: 'Distance in Miles', section: 'Venue Information', computed: true, placeholder: 'Enter distance in miles' },
+      { name: 'Venue_Address', type: 'textarea', label: 'Venue Address', section: 'Venue Information', placeholder: 'Enter venue address...', fullWidth: true },
+      { name: 'Event_Time', type: 'time', label: 'Event Time', section: 'Times', fullWidth: true, placeholder: '--:--' },
+      { name: 'Start_Time_For_Booking_Venue', type: 'time', label: 'Start Time for Booking Venue', section: 'Times', placeholder: '--:--' },
+      { name: 'End_Time_For_Booking_Venue', type: 'time', label: 'End Time for Booking Venue', section: 'Times', computed: true, placeholder: '--:--' },
+      { name: 'Start_Time_For_Report_Preparation', type: 'time', label: 'Start Time for Report Preparation', section: 'Times', computed: true, placeholder: '--:--' },
+      { name: 'End_Time_For_Report_Preparation', type: 'time', label: 'End Time for Report Preparation', section: 'Times', computed: true, placeholder: '--:--' },
+      { name: 'Total_Time', type: 'text', label: 'Total Time', section: 'Times', computed: true, placeholder: 'Enter total time' },
+      { name: 'Service_Time', type: 'text', label: 'Service Time', section: 'Times', computed: true, placeholder: 'Enter service time' },
+      { name: 'Event_Type', type: 'text', label: 'Event Type', section: 'Event Details', computed: true },
+      { name: 'Event_Day', type: 'text', label: 'Event Day', section: 'Event Details', computed: true, placeholder: 'Enter event day' },
       { name: 'Meeting_Type', type: 'select', label: 'Meeting Type', section: 'Distance & Options', options: ['Virtual', 'In Person', 'None'], default: 'None' },
-      { name: 'Distance_In_Kilometres', type: 'number', label: 'Distance in Kilometres', section: 'Distance & Options', placeholder: 'e.g. 5.2', fullWidth: true },
-      { name: 'logo', type: 'image', label: 'Logo / Image', section: 'Attachments', fullWidth: true },
+      { name: 'logo', type: 'image', label: '', section: 'Attachments', fullWidth: true },
     ],
   },
   'cancel-venue': {

@@ -5,6 +5,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getTemplateMetadata } from '../services/templateMetadata.service.js';
+import { extractVariablesFromDocx } from '../services/templateMetadata.service.js';
 import { runAutomation } from '../services/automationRunner.service.js';
 import { DocxGenerator } from '../services/docxGenerator.service.js';
 import { previewMaskingService } from '../services/previewMasking.service.js';
@@ -15,6 +16,7 @@ import User from '../models/User.js';
 import Document from '../models/Document.js';
 import { extractTextFromDocx } from '../utils/docxTextExtract.js';
 import HTMLToDOCX from 'html-to-docx';
+import { normalizeImagePlaceholdersToTemp } from '../utils/normalizeImagePlaceholders.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -103,6 +105,10 @@ export async function generateDocument(req, res) {
       return res.status(404).json({ error: `Unknown action: ${actionSlug}` });
     }
 
+    // Normalize legacy `{%logo}` style image placeholders to `{{%logo}}`
+    // so images render consistently with {{ }} delimiters.
+    const effectiveTemplatePath = normalizeImagePlaceholdersToTemp(templatePath);
+
     // Extract and sanitize images - EXACT same logic as arrange-venue controller (line-by-line match)
     // CRITICAL: Normalize image keys by stripping '%' prefix to match ImageModule behavior
     // ImageModule strips '%' when parsing {{%logo}}, so it looks for "logo" not "%logo"
@@ -110,6 +116,36 @@ export async function generateDocument(req, res) {
     const { images = {}, imageLayout = {}, ...variables } = req.body;
     const sanitizedImages = {};
     const base64Regex = /^data:image\/[\w.+.-]+;base64,/;
+
+    const shouldDebugImages =
+      process.env.DEBUG_IMAGES === '1' ||
+      Object.values(images || {}).some((v) => Array.isArray(v) && v.length > 1);
+    if (shouldDebugImages) {
+      const summary = Object.fromEntries(
+        Object.entries(images || {}).map(([k, v]) => [
+          k,
+          Array.isArray(v) ? `array(${v.length})` : typeof v,
+        ])
+      );
+      console.log('[images] actionSlug=', actionSlug, 'preview=', previewOnly, 'keys=', summary);
+      try {
+        const vars = extractVariablesFromDocx(templatePath);
+        const hasLogo2 = vars.includes('logo_2');
+        const hasLogo3 = vars.includes('logo_3');
+        const hasLogo4 = vars.includes('logo_4');
+        const hasLogo5 = vars.includes('logo_5');
+        console.log('[images] template tags:', {
+          has_logo: vars.includes('logo'),
+          has_logo_2: hasLogo2,
+          has_logo_3: hasLogo3,
+          has_logo_4: hasLogo4,
+          has_logo_5: hasLogo5,
+        });
+      } catch (e) {
+        console.log('[images] template tag scan failed:', e?.message || String(e));
+      }
+    }
+
     for (const [key, val] of Object.entries(images)) {
       if (!key || typeof key !== 'string') continue;
       
@@ -118,15 +154,28 @@ export async function generateDocument(req, res) {
       // This normalization ensures keys match what ImageModule expects
       const normalizedKey = key.startsWith('%') ? key.substring(1) : key;
       
-      if (Buffer.isBuffer(val)) {
-        sanitizedImages[normalizedKey] = val;
-      } else if (typeof val === 'string' && base64Regex.test(val)) {
-        const base64 = val.replace(base64Regex, '');
-        const buffer = Buffer.from(base64, 'base64');
-        if (buffer.length > 0) {
-          sanitizedImages[normalizedKey] = buffer;
+      const pushOne = (imgVal, idx) => {
+        const outKey = idx === 0 ? normalizedKey : `${normalizedKey}_${idx + 1}`;
+        if (Buffer.isBuffer(imgVal)) {
+          sanitizedImages[outKey] = imgVal;
+          return;
         }
+        if (typeof imgVal === 'string' && base64Regex.test(imgVal)) {
+          const base64 = imgVal.replace(base64Regex, '');
+          const buffer = Buffer.from(base64, 'base64');
+          if (buffer.length > 0) sanitizedImages[outKey] = buffer;
+        }
+      };
+
+      if (Array.isArray(val)) {
+        val.slice(0, 5).forEach((v, idx) => pushOne(v, idx));
+      } else {
+        pushOne(val, 0);
       }
+    }
+
+    if (shouldDebugImages) {
+      console.log('[images] sanitized keys=', Object.keys(sanitizedImages));
     }
 
     // Sanitize imageLayout (optional): { [imageKey]: { widthPercent?: number, widthPx?: number, heightPx?: number } }
@@ -164,11 +213,11 @@ export async function generateDocument(req, res) {
     let buffer;
     if (shouldMask) {
       const maskedData = previewMaskingService.maskData(data);
-      const generator = new DocxGenerator(templatePath, maskedData, sanitizedImages, sanitizedImageLayout);
+      const generator = new DocxGenerator(effectiveTemplatePath, maskedData, sanitizedImages, sanitizedImageLayout);
       buffer = generator.generate();
       buffer = previewMaskingService.injectBanner(buffer);
     } else {
-      const generator = new DocxGenerator(templatePath, data, sanitizedImages, sanitizedImageLayout);
+      const generator = new DocxGenerator(effectiveTemplatePath, data, sanitizedImages, sanitizedImageLayout);
       buffer = generator.generate();
       if (!adminUser && user.subscriptionStatus === 'trial') {
         await User.findByIdAndUpdate(userId, {

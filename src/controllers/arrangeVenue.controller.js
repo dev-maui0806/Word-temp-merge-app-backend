@@ -55,7 +55,7 @@ export async function generateArrangeVenue(req, res) {
       }
     }
 
-    const data = runArrangeVenueAutomations(variables);
+    const data = await runArrangeVenueAutomations(variables);
 
     const adminUser = isAdmin(user);
     const isTrialUser = user.subscriptionStatus === 'trial';

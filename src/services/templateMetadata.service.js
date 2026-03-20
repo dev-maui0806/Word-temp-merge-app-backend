@@ -29,6 +29,7 @@ function inferFieldType(name) {
   ) {
     return { type: 'image', label: formatLabel(name), fullWidth: true };
   }
+  if (/address|Address/i.test(name)) return { type: 'textarea', label: formatLabel(name), fullWidth: true };
   if (/date|Date/i.test(name)) return { type: 'date', label: formatLabel(name) };
   if (/time|Time/i.test(name)) return { type: 'time', label: formatLabel(name) };
   if (/distance|Distance|Kilometres|Miles|number/i.test(name)) return { type: 'number', label: formatLabel(name) };
@@ -48,10 +49,20 @@ function formatLabel(name) {
     .trim();
 }
 
+/** Variables never shown in the form UI (country-derived; still sent via context / automation). */
+const HIDDEN_UI_VARIABLES = new Set([
+  'Country',
+  'Country_Standard_Time',
+  'Country_Code',
+  'Country_Standard_Time_Short',
+  'COUNTRY_CURRENCY_SHORT_NAME',
+]);
+
 /** Infer form section from variable name (consistent across all action types) */
 function inferSection(name) {
   const n = name.toLowerCase();
   if (n.includes('date') || n.includes('fr')) return 'Dates';
+  if (n.includes('event_day')) return 'Event Details';
   if (n.includes('claimant') || n.includes('event_type')) return 'Claimant Details';
   if (n.includes('time')) return 'Times';
   if (n.includes('accommodation') || n.includes('hotel') || (n.includes('booking') && n.includes('room'))) return 'Accommodation';
@@ -204,27 +215,25 @@ export function getTemplateMetadata(actionSlug) {
     return { ok: false, error: `Template file not found: ${config.template}` };
   }
 
-  const inputFields = (config.fields || []).filter((f) => !f.computed);
-  let fields = inputFields;
+  let fields = [];
 
-  if (fields.length === 0) {
+  if ((config.fields || []).length > 0) {
+    fields = (config.fields || []).filter((f) => f && f.name && !HIDDEN_UI_VARIABLES.has(f.name));
+  } else {
     try {
       const extracted = extractVariablesFromDocx(templatePath);
       fields = extracted
-        .filter((name) => !isComputedVariable(name))
         .map((name) => {
-          // CRITICAL: Normalize field names - remove '%' prefix for image fields
-          // ImageModule strips '%' when parsing {{%logo}}, so field names must match
-          // This ensures frontend uses "logo" not "%logo" as the key
           const normalizedName = name.startsWith('%') ? name.substring(1) : name;
+          if (HIDDEN_UI_VARIABLES.has(normalizedName)) return null;
           const inferred = inferFieldType(normalizedName);
           const section = inferSection(normalizedName);
-          return { name: normalizedName, ...inferred, section };
-        });
-      // Sort fields by section and name for consistent display (all action types)
-      // Attachments (image fields) always appear at the bottom, after all other sections
+          const computed = isComputedVariable(normalizedName);
+          return { name: normalizedName, ...inferred, section, computed };
+        })
+        .filter(Boolean);
       fields.sort((a, b) => {
-        const sectionOrder = ['Dates', 'Claimant Details', 'Times', 'Venue Information', 'Accommodation', 'Notary', 'ENT Test', 'Distance & Options', 'General', 'Attachments'];
+        const sectionOrder = ['Dates', 'Claimant Details', 'Venue Information', 'Times', 'Event Details', 'Accommodation', 'Notary', 'ENT Test', 'Distance & Options', 'General', 'Attachments'];
         const aIdx = sectionOrder.indexOf(a.section);
         const bIdx = sectionOrder.indexOf(b.section);
         if (aIdx !== bIdx) return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);

@@ -16,6 +16,12 @@ const EMPTY_IMAGE_PNG = Buffer.from(
   'base64'
 );
 
+function normalizeImageKey(key) {
+  if (key == null) return '';
+  // Word sometimes introduces NBSP or stray whitespace into tags when editing.
+  return String(key).replace(/\u00A0/g, ' ').trim();
+}
+
 /**
  * DocxGenerator: Load template, inject data, embed images, return Buffer.
  * Uses docxtemplater + pizzip. Missing placeholders are rendered as blank.
@@ -68,7 +74,7 @@ export class DocxGenerator {
         // ImageModule strips '%' prefix when parsing {{%logo}}, so tagName is "logo" (not "%logo")
         // We normalize image keys in the controller, so this.images has "logo" (not "%logo")
         // This matches exactly how arrange-venue works - unified logic for all action types.
-        const imageKey = tagName || tagValue;
+        const imageKey = normalizeImageKey(tagName || tagValue);
         const buffer = this.images[imageKey];
 
         // If no image was uploaded for this placeholder, fall back to a tiny
@@ -93,7 +99,7 @@ export class DocxGenerator {
           /* image-size may fail for some formats */
         }
 
-        const key = tagName || tagValue;
+        const key = normalizeImageKey(tagName || tagValue);
         const layout = key && this.imageLayout ? this.imageLayout[key] : undefined;
 
         // User-provided sizing (optional). We accept widthPercent (preferred) and widthPx/heightPx.
