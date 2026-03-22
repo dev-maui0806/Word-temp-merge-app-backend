@@ -1,5 +1,5 @@
 import SubscriptionPlan from '../models/SubscriptionPlan.js';
-import { PLANS } from '../config/phonepe.js';
+import { PLANS } from '../config/paymentPlans.js';
 
 const PLAN_IDS = Object.keys(PLANS);
 

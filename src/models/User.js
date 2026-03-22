@@ -70,7 +70,7 @@ const userSchema = new mongoose.Schema(
       type: String,
       enum: ['monthly', 'quarterly', 'yearly'],
     },
-    // Stripe fields removed; PhonePe integration does not require customer/subscription ids
+    // Stripe fields removed; Razorpay integration does not require customer/subscription ids
     pinHash: {
       type: String,
     },

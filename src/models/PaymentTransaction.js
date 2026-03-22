@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const paymentTransactionSchema = new mongoose.Schema(
   {
-    provider: { type: String, enum: ['phonepe'], required: true },
+    provider: { type: String, enum: ['razorpay'], required: true },
     transactionId: { type: String, required: true, unique: true }, // merchant generated
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     plan: { type: String, enum: ['monthly', 'quarterly', 'yearly'], required: true },

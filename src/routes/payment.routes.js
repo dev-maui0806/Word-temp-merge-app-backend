@@ -1,22 +1,17 @@
 import { Router } from 'express';
 import { requireAuth } from '../middlewares/auth.js';
 import { enforcePinRestrictions } from '../middlewares/enforcePinRestrictions.js';
-import * as phonepeController from '../controllers/phonepe.controller.js';
+import * as razorpayController from '../controllers/razorpay.controller.js';
 
 const router = Router();
 
-router.get('/plans', phonepeController.listPlans);
+router.get('/plans', razorpayController.listPlans);
 
-router.post('/phonepe/checkout', requireAuth, enforcePinRestrictions, phonepeController.createCheckout);
+router.post('/razorpay/order', requireAuth, enforcePinRestrictions, razorpayController.createOrder);
 
-// Poll status (uses PhonePe Order Status API server-side)
-router.get('/phonepe/order/:merchantOrderId/status', requireAuth, phonepeController.getOrderStatus);
+router.post('/razorpay/verify', requireAuth, razorpayController.verifyPayment);
 
-// MOCK settle for testing during KYC (requires PHONEPE_MODE=MOCK)
-router.post('/phonepe/mock/settle', requireAuth, phonepeController.mockSettle);
-
-// Callback is called by PhonePe servers (no auth)
-router.post('/phonepe/callback', phonepeController.handleCallback);
+router.get('/razorpay/order/:orderId/status', requireAuth, razorpayController.getOrderStatus);
 
 export default router;
 

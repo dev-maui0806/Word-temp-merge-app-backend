@@ -10,6 +10,39 @@ import { ensureDefaultSubscriptionPlans } from './src/services/subscriptionPlan.
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const PAYMENT_MODE = (process.env.PAYMENT_MODE || 'test').toLowerCase();
+
+function isLocalLikeEnvironment() {
+  const nodeEnv = String(process.env.NODE_ENV || '').toLowerCase();
+  if (nodeEnv !== 'production') return true;
+  const appOrigin = String(process.env.APP_ORIGIN || process.env.CORS_ORIGIN || '').toLowerCase();
+  return appOrigin.includes('localhost') || appOrigin.includes('127.0.0.1');
+}
+
+function validatePaymentModeGuard() {
+  if (!['test', 'live'].includes(PAYMENT_MODE)) {
+    throw new Error("Invalid PAYMENT_MODE. Allowed values are 'test' or 'live'.");
+  }
+
+  const keyId = String(process.env.RAZORPAY_KEY_ID || '');
+  const isLiveKey = keyId.startsWith('rzp_live_');
+  const isTestKey = keyId.startsWith('rzp_test_');
+  const isLocal = isLocalLikeEnvironment();
+
+  if (PAYMENT_MODE === 'test' && isLiveKey) {
+    throw new Error('PAYMENT_MODE=test cannot be used with a live Razorpay key (rzp_live_*).');
+  }
+  if (PAYMENT_MODE === 'live' && isTestKey) {
+    throw new Error('PAYMENT_MODE=live cannot be used with a test Razorpay key (rzp_test_*).');
+  }
+  if (PAYMENT_MODE === 'live' && isLocal) {
+    throw new Error(
+      'Refusing to start with PAYMENT_MODE=live in local/dev environment. Use PAYMENT_MODE=test for localhost.'
+    );
+  }
+}
+
+validatePaymentModeGuard();
 
 await connectDB();
 await ensureDefaultSubscriptionPlans().catch((err) =>
