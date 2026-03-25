@@ -74,7 +74,8 @@ function inferSection(name) {
   const n = name.toLowerCase();
   if (n.includes('date') || n.includes('fr')) return 'Dates';
   if (n.includes('event_day')) return 'Event Details';
-  if (n.includes('claimant') || n.includes('event_type')) return 'Claimant Details';
+  if (n.includes('event_type')) return 'Event Details';
+  if (n.includes('claimant')) return 'Claimant Details';
   if (n.includes('time')) return 'Times';
   if (n.includes('accommodation') || n.includes('hotel') || (n.includes('booking') && n.includes('room'))) return 'Accommodation';
   if (n.includes('notary')) return 'Notary';
@@ -251,9 +252,70 @@ export function getTemplateMetadata(actionSlug) {
         if (aIdx !== bIdx) return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
         return a.name.localeCompare(b.name);
       });
+
+      // UI requirement: if a template has multiple image placeholders like:
+      //   logo, logo_2, logo_3, ...
+      // we only want ONE upload card (the base "logo") and then allow the backend
+      // to split the uploaded array into logo/logo_2/logo_3 automatically.
+      //
+      // The controller already does this splitting for arrays:
+      //   outKey = idx===0 ? normalizedKey : `${normalizedKey}_${idx+1}`
+      //
+      // So here we hide the `_2+` fields when the base field exists.
+      const imageFieldsByName = new Map(fields.map((f) => [f.name, f]));
+      const isImageType = (f) => f && f.type === 'image' && typeof f.name === 'string';
+      const baseImageRegex = /^(.*)_([2-9]\d*)$/; // capture base + index >= 2
+
+      fields = fields.filter((f) => {
+        if (!isImageType(f)) return true;
+        const m = String(f.name).match(baseImageRegex);
+        if (!m) return true;
+        const base = m[1];
+        // Hide logo_2+ only when logo exists (otherwise keep it).
+        return !imageFieldsByName.has(base);
+      });
+
+      // If we filtered, fields.sort order may be slightly off; re-sort for stable UI.
+      fields.sort((a, b) => {
+        const sectionOrder = ['Dates', 'Claimant Details', 'Venue Information', 'Times', 'Event Details', 'Accommodation', 'Notary', 'ENT Test', 'Distance & Options', 'General', 'Attachments'];
+        const aIdx = sectionOrder.indexOf(a.section);
+        const bIdx = sectionOrder.indexOf(b.section);
+        if (aIdx !== bIdx) return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+        return a.name.localeCompare(b.name);
+      });
     } catch (err) {
       return { ok: false, error: `Failed to extract variables: ${err.message}` };
     }
+  }
+
+  // UI requirement: ensure EVENT TYPE + EVENT DAY are always shown when the related inputs exist.
+  // Some templates' DOCX placeholder extraction can miss Event_Day even though automation derives it.
+  const normalizeKey = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const hasEventDate = fields.some((f) => normalizeKey(f?.name) === 'EVENTDATE');
+  const hasEventDay = fields.some((f) => normalizeKey(f?.name) === 'EVENTDAY');
+  const hasEventType = fields.some((f) => normalizeKey(f?.name) === 'EVENTTYPE');
+
+  if (hasEventDate && !hasEventDay) {
+    fields.push({
+      name: 'Event_Day',
+      type: 'text',
+      label: 'Event Day',
+      section: 'Event Details',
+      computed: true,
+      placeholder: 'Enter event day',
+    });
+  }
+
+  if (!hasEventType) {
+    fields.push({
+      name: 'Event_Type',
+      type: 'text',
+      label: 'Event Type',
+      section: 'Event Details',
+      computed: true,
+      placeholder: 'Enter event type',
+      // Marking as computed ensures UI shows the AUTO badge + read-only value.
+    });
   }
 
   return {
@@ -269,6 +331,7 @@ export function getTemplateMetadata(actionSlug) {
 function isComputedVariable(name) {
   const computed = [
     'Event_Day',
+    'Event_Type',
     'Country_Standard_Time',
     'Country_Code',
     'Country_Standard_Time_Short',
