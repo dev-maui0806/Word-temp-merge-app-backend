@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import { getTemplateConfig, getTemplatePath } from '../templates/templateRegistry.js';
+import { isDateOfFRVariableName } from '../utils/dateOfFRVariable.js';
 
 const require = createRequire(import.meta.url);
 const InspectModuleFactory = require('docxtemplater/js/inspect-module.js');
@@ -56,7 +57,17 @@ const HIDDEN_UI_VARIABLES = new Set([
   'Country_Code',
   'Country_Standard_Time_Short',
   'COUNTRY_CURRENCY_SHORT_NAME',
+  'Country_Currency_Short_Name',
 ]);
+
+function isHiddenFromFormUi(name) {
+  if (!name || typeof name !== 'string') return true;
+  if (HIDDEN_UI_VARIABLES.has(name)) return true;
+  const u = name.toUpperCase();
+  if (u.includes('CURRENCY') && (u.includes('COUNTRY') || u.startsWith('COUNTRY_'))) return true;
+  if (/^Country_(Standard_Time|Code|Standard_Time_Short|Currency)/i.test(name)) return true;
+  return false;
+}
 
 /** Infer form section from variable name (consistent across all action types) */
 function inferSection(name) {
@@ -218,18 +229,19 @@ export function getTemplateMetadata(actionSlug) {
   let fields = [];
 
   if ((config.fields || []).length > 0) {
-    fields = (config.fields || []).filter((f) => f && f.name && !HIDDEN_UI_VARIABLES.has(f.name));
+    fields = (config.fields || []).filter((f) => f && f.name && !isHiddenFromFormUi(f.name));
   } else {
     try {
       const extracted = extractVariablesFromDocx(templatePath);
       fields = extracted
         .map((name) => {
           const normalizedName = name.startsWith('%') ? name.substring(1) : name;
-          if (HIDDEN_UI_VARIABLES.has(normalizedName)) return null;
+          if (isHiddenFromFormUi(normalizedName)) return null;
           const inferred = inferFieldType(normalizedName);
           const section = inferSection(normalizedName);
           const computed = isComputedVariable(normalizedName);
-          return { name: normalizedName, ...inferred, section, computed };
+          const autoBadge = isDateOfFRVariableName(normalizedName);
+          return { name: normalizedName, ...inferred, section, computed, ...(autoBadge ? { autoBadge: true } : {}) };
         })
         .filter(Boolean);
       fields.sort((a, b) => {

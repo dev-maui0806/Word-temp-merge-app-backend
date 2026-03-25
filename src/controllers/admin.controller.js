@@ -178,7 +178,7 @@ export async function listUsers(req, res) {
     const users = await User.find({})
       .sort({ createdAt: -1 })
       .select(
-        'email name role subscriptionStatus subscriptionPlan subscriptionExpiry trialDocCount trialStartDate createdAt'
+        'email name role subscriptionStatus subscriptionPlan subscriptionExpiry trialDocCount trialStartDate signupIp signupCountry signupCountryCode createdAt'
       )
       .lean();
 
@@ -192,6 +192,9 @@ export async function listUsers(req, res) {
       subscriptionExpiry: u.subscriptionExpiry || null,
       trialDocCount: u.trialDocCount ?? 0,
       trialStartDate: u.trialStartDate || u.createdAt,
+      signupIp: u.signupIp || null,
+      signupCountry: u.signupCountry || null,
+      signupCountryCode: u.signupCountryCode || null,
       createdAt: u.createdAt,
     }));
 

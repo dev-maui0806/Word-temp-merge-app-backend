@@ -4,6 +4,7 @@ import { RAZORPAY } from '../config/razorpay.js';
 import PaymentTransaction from '../models/PaymentTransaction.js';
 import User from '../models/User.js';
 import { getEffectivePlanConfig } from './subscriptionPlan.service.js';
+import { invoiceService } from './invoice.service.js';
 
 function assertConfigured() {
   if (!RAZORPAY.keyId) throw new Error('RAZORPAY_KEY_ID not configured');
@@ -118,6 +119,14 @@ export const razorpayService = {
     txn.rawCallback = { ...(txn.rawCallback || {}), verifyRequest: { paymentId }, verifyResult: 'verified' };
     await txn.save();
     await activateSubscriptionFromTxn(txn);
+
+    // Send invoice email (Option 2).
+    // Do not fail payment activation if invoice sending fails; invoiceService persists status for retries.
+    try {
+      await invoiceService.sendInvoiceForSuccessfulPayment(txn);
+    } catch (err) {
+      console.error('Invoice sending failed:', err.message);
+    }
 
     return txn;
   },

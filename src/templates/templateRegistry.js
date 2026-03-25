@@ -30,8 +30,8 @@ export const TEMPLATE_REGISTRY = {
     template: 'arrangeVenue.docx',
     automation: 'arrangeVenue',
     fields: [
-      // Dates — Date_of_FR is filled by automation from Event_Date (show in UI as read-only + AUTO)
-      { name: 'Date_of_FR', type: 'text', label: 'Date of FR', section: 'Dates', computed: true },
+      // Dates — Date_of_FR defaults to today in country TZ; editable with AUTO badge
+      { name: 'Date_of_FR', type: 'date', label: 'Date of FR', section: 'Dates', autoBadge: true, placeholder: 'mm/dd/yyyy' },
       { name: 'Event_Date', type: 'date', label: 'Event Date', section: 'Dates', placeholder: 'mm/dd/yyyy' },
       { name: 'Claimant_Name', type: 'text', label: 'Claimant Name', section: 'Claimant Details', placeholder: 'Enter claimant name', fullWidth: true },
       { name: 'Venue_Name', type: 'text', label: 'Venue Name', section: 'Venue Information', placeholder: 'Enter venue name' },

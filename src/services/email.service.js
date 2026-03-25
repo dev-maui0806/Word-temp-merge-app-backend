@@ -53,3 +53,35 @@ export async function sendOTPEmail(toEmail, otp) {
   return data;
 }
 
+function escapeHtml(s) {
+  return String(s || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+export async function sendInvoiceEmail({ toEmail, subject, html }) {
+  if (!toEmail) throw new Error('sendInvoiceEmail: toEmail is required');
+  if (!subject) throw new Error('sendInvoiceEmail: subject is required');
+  if (!html) throw new Error('sendInvoiceEmail: html is required');
+
+  const resend = getResend();
+  const from = getFrom();
+
+  const safeSubject = escapeHtml(subject);
+
+  const { data, error } = await resend.emails.send({
+    from,
+    to: toEmail,
+    subject: safeSubject,
+    html,
+  });
+
+  if (error) throw new Error(error.message || 'Resend: failed to send invoice email');
+  if (!data?.id) throw new Error('Resend: unexpected response sending invoice email');
+
+  return data;
+}
+

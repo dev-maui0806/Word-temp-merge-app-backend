@@ -1,9 +1,11 @@
 import { resolveCountryData } from '../utils/resolveCountryData.js';
+import { getCurrentCountryTime } from '../utils/countryTime.js';
 import { formatDateOfFR, formatEventDate, deriveEventDay } from '../utils/dateFormatters.js';
 import { runTimeAutomation } from '../utils/timeAutomation.js';
 import { enforceTimeFormat } from '../utils/enforceTimeFormat.js';
 import { convertKmToMiles } from '../utils/convertKmToMiles.js';
 import { resolveMeetingType } from '../utils/resolveMeetingType.js';
+import { collectDateOfFRKeys } from '../utils/dateOfFRVariable.js';
 
 const allowedVariables = [
   'Date_of_FR',
@@ -118,9 +120,42 @@ export async function runArrangeVenueAutomations(input, options = {}) {
   }
 
   if (input.Event_Date) {
-    data.Date_of_FR = formatDateOfFR(input.Event_Date);
     data.Event_Date = formatEventDate(input.Event_Date);
     data.Event_Day = deriveEventDay(input.Event_Date);
+  }
+
+  // Date of FR (Date_of_FR or aliases): user value or country today
+  const mergedForFr = { ...data, ...input };
+  const frKeys = collectDateOfFRKeys(mergedForFr);
+  const keysToWrite = frKeys.length > 0 ? frKeys : ['Date_of_FR'];
+
+  let dateOfFRRaw = '';
+  for (const k of keysToWrite) {
+    const v = input[k] ?? data[k];
+    if (v != null && String(v).trim()) {
+      dateOfFRRaw = String(v).trim();
+      break;
+    }
+  }
+
+  let formattedFr = '';
+  if (dateOfFRRaw) {
+    formattedFr = formatDateOfFR(dateOfFRRaw);
+  } else {
+    try {
+      if (country) {
+        const ct = await getCurrentCountryTime(country, input.countryTimezoneId ?? input.CountryTimezoneId);
+        if (ct?.isoDate) formattedFr = formatDateOfFR(ct.isoDate);
+      }
+    } catch (err) {
+      console.warn('Could not resolve country time for Date_of_FR default:', err.message);
+    }
+    if (!formattedFr) {
+      formattedFr = formatDateOfFR(new Date().toISOString().slice(0, 10));
+    }
+  }
+  for (const k of keysToWrite) {
+    data[k] = formattedFr;
   }
 
   if (input.Distance_In_Kilometres != null) {

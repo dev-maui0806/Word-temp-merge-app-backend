@@ -7,6 +7,7 @@ import User from '../models/User.js';
 import Otp from '../models/Otp.js';
 import RefreshToken from '../models/RefreshToken.js';
 import { otpDeliveryService } from './otpDelivery.service.js';
+import { geoLocationService } from './geoLocation.service.js';
 import {
   JWT_ACCESS_EXPIRY,
   JWT_REFRESH_EXPIRY_DAYS,
@@ -126,7 +127,7 @@ export const authService = {
     return { sent: true };
   },
 
-  async verifyEmailOtp(email, otp, deviceId = '', userAgent = '') {
+  async verifyEmailOtp(email, otp, deviceId = '', userAgent = '', signupIp = '') {
     const normalized = String(email).toLowerCase().trim();
     const record = await Otp.findOne({
       email: normalized,
@@ -141,11 +142,15 @@ export const authService = {
     let user = await User.findOne({ email: normalized });
     if (!user) {
       const initialName = normalized.split('@')[0] || '';
+      const geo = await geoLocationService.resolveCountryByIp(signupIp);
       user = await User.create({
         email: normalized,
         name: initialName,
         trialStartDate: new Date(),
         role: getRoleForEmail(normalized),
+        signupIp: signupIp || undefined,
+        signupCountry: geo?.country,
+        signupCountryCode: geo?.countryCode,
       });
     }
 
@@ -153,7 +158,7 @@ export const authService = {
     return this.createSession(user, deviceId, userAgent);
   },
 
-  async verifyMobileOtp(mobile, otp, deviceId = '', userAgent = '', email = '') {
+  async verifyMobileOtp(mobile, otp, deviceId = '', userAgent = '', email = '', signupIp = '') {
     const normalized = String(mobile).trim();
     const record = await Otp.findOne({
       mobile: normalized,
@@ -171,12 +176,16 @@ export const authService = {
         email?.trim() ||
         `user_${uuidv4().slice(0, 8)}@otp.local`;
       const initialName = userEmail.split('@')[0] || '';
+      const geo = await geoLocationService.resolveCountryByIp(signupIp);
       user = await User.create({
         email: userEmail,
         mobile: normalized,
         name: initialName,
         trialStartDate: new Date(),
         role: getRoleForEmail(userEmail),
+        signupIp: signupIp || undefined,
+        signupCountry: geo?.country,
+        signupCountryCode: geo?.countryCode,
       });
     }
 
@@ -184,7 +193,7 @@ export const authService = {
     return this.createSession(user, deviceId, userAgent);
   },
 
-  async registerWithPassword(email, password, deviceId = '', userAgent = '') {
+  async registerWithPassword(email, password, deviceId = '', userAgent = '', signupIp = '') {
     const normalized = String(email).toLowerCase().trim();
     if (!isGmail(normalized)) {
       throw new Error('Please enter a valid email address.');
@@ -203,12 +212,16 @@ export const authService = {
 
     const passwordHash = await bcrypt.hash(password, 12);
     const initialName = normalized.split('@')[0] || '';
+    const geo = await geoLocationService.resolveCountryByIp(signupIp);
     const user = await User.create({
       email: normalized,
       name: initialName,
       passwordHash,
       trialStartDate: new Date(),
       role: getRoleForEmail(normalized),
+      signupIp: signupIp || undefined,
+      signupCountry: geo?.country,
+      signupCountryCode: geo?.countryCode,
     });
 
     await this.upsertDevice(user, deviceId, userAgent);
@@ -238,7 +251,7 @@ export const authService = {
     return this.createSession(user, deviceId, userAgent, 'password');
   },
 
-  async googleAuth(idToken, deviceId = '', userAgent = '') {
+  async googleAuth(idToken, deviceId = '', userAgent = '', signupIp = '') {
     const payload = await verifyGoogleIdToken(idToken);
     const googleId = payload.sub;
     const email = payload.email?.toLowerCase().trim();
@@ -252,12 +265,16 @@ export const authService = {
         await user.save();
       } else {
         const initialName = payload.name?.trim() || email.split('@')[0] || '';
+        const geo = await geoLocationService.resolveCountryByIp(signupIp);
         user = await User.create({
           email,
           googleId,
           name: initialName,
           trialStartDate: new Date(),
           role: getRoleForEmail(email),
+          signupIp: signupIp || undefined,
+          signupCountry: geo?.country,
+          signupCountryCode: geo?.countryCode,
         });
       }
     }
@@ -314,6 +331,8 @@ export const authService = {
         mobile: user.mobile,
         role: user.role,
         subscriptionStatus: user.subscriptionStatus,
+        signupCountry: user.signupCountry,
+        signupCountryCode: user.signupCountryCode,
       },
     };
   },
@@ -359,6 +378,8 @@ export const authService = {
         mobile: user.mobile,
         role: user.role,
         subscriptionStatus: user.subscriptionStatus,
+        signupCountry: user.signupCountry,
+        signupCountryCode: user.signupCountryCode,
       },
     };
   },

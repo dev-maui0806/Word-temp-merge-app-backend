@@ -6,9 +6,44 @@
 import { runArrangeVenueAutomations } from './arrangeVenue.service.js';
 import { resolveCountryData } from '../utils/resolveCountryData.js';
 import { formatDateOfFR, formatEventDate, deriveEventDay } from '../utils/dateFormatters.js';
+import { getCurrentCountryTime } from '../utils/countryTime.js';
+import { collectDateOfFRKeys } from '../utils/dateOfFRVariable.js';
 import { convertKmToMiles } from '../utils/convertKmToMiles.js';
 import { runTimeAutomation } from '../utils/timeAutomation.js';
 import { getTemplateConfig } from '../templates/templateRegistry.js';
+
+const TIME_SEED_PRIORITY = [
+  'Start_Time_For_Booking_Venue',
+  'Start_Time_For_Cancel_Venue',
+  'Start_Time_For_Cancel_Notary',
+  'Start_Time_For_Cancel_Transportation',
+  'Start_Time_For_Cancel_Accommodation',
+  'Start_Time_For_Arrange_Transportation',
+  'Start_Time_For_Arrange_Accommodation',
+  'Start_Time_For_Arrange_accommodation',
+  'Start_Time_For_Booking_Transportation',
+  'Start_Time_For_Booking_Accommodation',
+];
+
+/**
+ * Pick a non-empty HH:mm-style seed; prefer action-specific Start_Time_* before Event_Time.
+ */
+function pickStartTimeForAutomation(input) {
+  if (!input || typeof input !== 'object') return null;
+  for (const key of TIME_SEED_PRIORITY) {
+    const v = input[key];
+    if (v != null && typeof v === 'string' && v.trim()) return v.trim();
+  }
+  const startKeys = Object.keys(input).filter((k) => k.startsWith('Start_Time_'));
+  startKeys.sort();
+  for (const key of startKeys) {
+    const v = input[key];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  const et = input.Event_Time;
+  if (et != null && String(et).trim()) return String(et).trim();
+  return null;
+}
 
 /**
  * Run automation for an action. Returns data ready for template merge.
@@ -39,17 +74,12 @@ export async function runAutomation(actionSlug, input, options = {}) {
     }
   }
 
-  // Common date computations for all actions (if Event_Date is present)
+  // Event_Date → Event_Day only (Date_of_FR is independent: form + country default)
   if (input.Event_Date) {
-    // Only compute if not already set (arrangeVenue automation will set these)
-    if (!data.Date_of_FR) {
-      data.Date_of_FR = formatDateOfFR(input.Event_Date);
-    }
     if (!data.Event_Day) {
       data.Event_Day = deriveEventDay(input.Event_Date);
     }
-    // Format Event_Date if it's still in ISO format
-    if (data.Event_Date === input.Event_Date && input.Event_Date.includes('-')) {
+    if (data.Event_Date === input.Event_Date && String(input.Event_Date).includes('-')) {
       data.Event_Date = formatEventDate(input.Event_Date);
     }
   }
@@ -67,21 +97,7 @@ export async function runAutomation(actionSlug, input, options = {}) {
   }
 
   // Common time automation for all actions (Start_Time_For_Report_Preparation, etc.)
-  // Use any Start_Time_* or Event_Time field as the seed so all action types are covered
-  const startTime =
-    input.Start_Time_For_Booking_Venue ??
-    input.Start_Time_For_Cancel_Venue ??
-    input.Start_Time_For_Cancel_Transportation ??
-    input.Start_Time_For_Arrange_Transportation ??
-    input.Start_Time_For_Booking_Transportation ??
-    (() => {
-      for (const [key, value] of Object.entries(input)) {
-        if ((key.startsWith('Start_Time_') || key === 'Event_Time') && typeof value === 'string' && value.trim()) {
-          return value.trim();
-        }
-      }
-      return null;
-    })();
+  const startTime = pickStartTimeForAutomation(input);
   if (startTime) {
     if (!data.Start_Time_For_Report_Preparation) {
       try {
@@ -97,6 +113,40 @@ export async function runAutomation(actionSlug, input, options = {}) {
     case 'arrangeVenue':
       return await runArrangeVenueAutomations(data, { previewOnly });
     default:
+      await finalizeDateOfFRForMerge(data, country, timezoneId);
       return data;
+  }
+}
+
+/** Format or default Date of FR for templates (any variable alias; never from Event_Date). */
+async function finalizeDateOfFRForMerge(data, country, timezoneId) {
+  const keys = collectDateOfFRKeys(data);
+  if (keys.length === 0) return;
+
+  let raw = '';
+  for (const k of keys) {
+    const v = data[k];
+    if (v != null && String(v).trim()) {
+      raw = String(v).trim();
+      break;
+    }
+  }
+
+  let formatted = '';
+  if (raw) {
+    formatted = formatDateOfFR(raw);
+  } else if (country) {
+    try {
+      const ct = await getCurrentCountryTime(country, timezoneId);
+      if (ct?.isoDate) formatted = formatDateOfFR(ct.isoDate);
+    } catch (err) {
+      console.warn('Date_of_FR country default:', err.message);
+    }
+  }
+  if (!formatted) {
+    formatted = formatDateOfFR(new Date().toISOString().slice(0, 10));
+  }
+  for (const k of keys) {
+    data[k] = formatted;
   }
 }

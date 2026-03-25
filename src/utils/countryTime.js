@@ -89,6 +89,24 @@ export async function getCurrentCountryTime(countryInput, timezoneId) {
 
   const formattedDate = formatter.format(localDate);
 
+  // ISO date (YYYY-MM-DD) for the country's current date (used by Date_of_FR default)
+  let isoDate = '';
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      timeZone: iana,
+    }).formatToParts(localDate);
+    const y = parts.find((p) => p.type === 'year')?.value ?? '';
+    const m = parts.find((p) => p.type === 'month')?.value ?? '';
+    const d = parts.find((p) => p.type === 'day')?.value ?? '';
+    if (y && m && d) isoDate = `${y}-${m}-${d}`;
+  } catch {
+    // fallback to UTC date
+    isoDate = localDate.toISOString().slice(0, 10);
+  }
+
   return {
     ok: true,
     country: countryDoc.name,
@@ -101,6 +119,7 @@ export async function getCurrentCountryTime(countryInput, timezoneId) {
     ianaTimeZone: iana,
     greeting,
     formattedDate,
+    isoDate: isoDate || undefined,
   };
 }
 

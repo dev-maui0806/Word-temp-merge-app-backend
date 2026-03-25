@@ -85,6 +85,19 @@ const userSchema = new mongoose.Schema(
       type: [deviceSchema],
       default: [],
     },
+    signupIp: {
+      type: String,
+      trim: true,
+    },
+    signupCountry: {
+      type: String,
+      trim: true,
+    },
+    signupCountryCode: {
+      type: String,
+      trim: true,
+      uppercase: true,
+    },
   },
   { timestamps: true }
 );

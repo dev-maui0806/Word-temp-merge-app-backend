@@ -1,48 +1,66 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 
-import { connectDB } from './src/config/db.js';
-import routes from './src/routes/index.js';
-import { subscriptionMaintenanceService } from './src/services/subscriptionMaintenance.service.js';
-import { ensureDefaultSubscriptionPlans } from './src/services/subscriptionPlan.service.js';
+// Ensure we always load the correct backend/.env regardless of PM2 working directory.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const PAYMENT_MODE = (process.env.PAYMENT_MODE || 'test').toLowerCase();
+let PAYMENT_MODE = (process.env.PAYMENT_MODE || 'test').toLowerCase();
 
-function isLocalLikeEnvironment() {
-  const nodeEnv = String(process.env.NODE_ENV || '').toLowerCase();
-  if (nodeEnv !== 'production') return true;
-  const appOrigin = String(process.env.APP_ORIGIN || process.env.CORS_ORIGIN || '').toLowerCase();
-  return appOrigin.includes('localhost') || appOrigin.includes('127.0.0.1');
+function detectKeyMode(keyId) {
+  const id = String(keyId || '').trim();
+  if (id.startsWith('rzp_live_')) return 'live';
+  if (id.startsWith('rzp_test_')) return 'test';
+  return null;
 }
 
-function validatePaymentModeGuard() {
-  if (!['test', 'live'].includes(PAYMENT_MODE)) {
-    throw new Error("Invalid PAYMENT_MODE. Allowed values are 'test' or 'live'.");
+function applyPaymentModeGuard() {
+  const nodeEnv = String(process.env.NODE_ENV || '').toLowerCase();
+  const keyId = process.env.RAZORPAY_KEY_ID;
+
+  const keyMode = detectKeyMode(keyId);
+  const requestedMode = PAYMENT_MODE;
+
+  if (!['test', 'live'].includes(requestedMode)) {
+    // Default to safe test if invalid.
+    console.warn(`Invalid PAYMENT_MODE="${requestedMode}". Defaulting to "test".`);
+    PAYMENT_MODE = 'test';
   }
 
-  const keyId = String(process.env.RAZORPAY_KEY_ID || '');
-  const isLiveKey = keyId.startsWith('rzp_live_');
-  const isTestKey = keyId.startsWith('rzp_test_');
-  const isLocal = isLocalLikeEnvironment();
+  // If key id clearly indicates live/test, trust the key (prevents outages from env mismatch).
+  if (keyMode && requestedMode !== keyMode) {
+    console.warn(`PAYMENT_MODE="${requestedMode}" mismatches Razorpay key (${keyMode}). Auto-switching to "${keyMode}".`);
+    PAYMENT_MODE = keyMode;
+  }
 
-  if (PAYMENT_MODE === 'test' && isLiveKey) {
-    throw new Error('PAYMENT_MODE=test cannot be used with a live Razorpay key (rzp_live_*).');
-  }
-  if (PAYMENT_MODE === 'live' && isTestKey) {
-    throw new Error('PAYMENT_MODE=live cannot be used with a test Razorpay key (rzp_test_*).');
-  }
-  if (PAYMENT_MODE === 'live' && isLocal) {
+  // Safety: refuse to start with LIVE keys only when we can clearly detect local/dev.
+  // (Avoids accidental prod outages if NODE_ENV is not set.)
+  const appOrigin = String(process.env.APP_ORIGIN || process.env.CORS_ORIGIN || '').toLowerCase();
+  const isLocalLike =
+    appOrigin.includes('localhost') || appOrigin.includes('127.0.0.1') || appOrigin.includes('0.0.0.0');
+  if (isLocalLike && keyMode === 'live') {
     throw new Error(
-      'Refusing to start with PAYMENT_MODE=live in local/dev environment. Use PAYMENT_MODE=test for localhost.'
+      'Refusing to start with live Razorpay key (rzp_live_*) on local/dev. Use test keys (rzp_test_*).'
     );
   }
+
+  // For observability only (don't log secrets).
+  console.log(`Payment mode: ${PAYMENT_MODE} (keyMode=${keyMode || 'unknown'}, requested=${requestedMode})`);
 }
 
-validatePaymentModeGuard();
+applyPaymentModeGuard();
+
+// Dynamic imports ensure dotenv has populated process.env before modules read it.
+const { connectDB } = await import('./src/config/db.js');
+const routes = (await import('./src/routes/index.js')).default;
+const { subscriptionMaintenanceService } = await import('./src/services/subscriptionMaintenance.service.js');
+const { ensureDefaultSubscriptionPlans } = await import('./src/services/subscriptionPlan.service.js');
 
 await connectDB();
 await ensureDefaultSubscriptionPlans().catch((err) =>

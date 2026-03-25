@@ -1,6 +1,7 @@
 import { authService } from '../services/auth.service.js';
 import { pinService } from '../services/index.js';
 import User from '../models/User.js';
+import { getClientIp } from '../utils/requestIp.js';
 
 export async function sendEmailOtp(req, res) {
   try {
@@ -46,11 +47,13 @@ export async function verifyEmailOtp(req, res) {
       return res.status(400).json({ error: 'Email and OTP are required' });
     }
 
+    const signupIp = getClientIp(req);
     const session = await authService.verifyEmailOtp(
       email,
       otp,
       deviceId,
-      userAgent
+      userAgent,
+      signupIp
     );
     res.json(session);
   } catch (err) {
@@ -68,12 +71,14 @@ export async function verifyMobileOtp(req, res) {
       return res.status(400).json({ error: 'Mobile and OTP are required' });
     }
 
+    const signupIp = getClientIp(req);
     const session = await authService.verifyMobileOtp(
       mobile,
       otp,
       deviceId,
       userAgent,
-      email
+      email,
+      signupIp
     );
     res.json(session);
   } catch (err) {
@@ -91,7 +96,8 @@ export async function register(req, res) {
       return res.status(400).json({ error: 'Email and password are required.' });
     }
 
-    const session = await authService.registerWithPassword(email, password, deviceId, userAgent);
+    const signupIp = getClientIp(req);
+    const session = await authService.registerWithPassword(email, password, deviceId, userAgent, signupIp);
     res.status(201).json(session);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -125,7 +131,8 @@ export async function googleAuth(req, res) {
       return res.status(400).json({ error: 'idToken is required' });
     }
 
-    const session = await authService.googleAuth(idToken, deviceId, userAgent);
+    const signupIp = getClientIp(req);
+    const session = await authService.googleAuth(idToken, deviceId, userAgent, signupIp);
     res.json(session);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -151,6 +158,8 @@ export async function me(req, res) {
     subscriptionPlan: user.subscriptionPlan,
     trialDocCount: user.trialDocCount,
     trialStartDate: user.trialStartDate,
+    signupCountry: user.signupCountry,
+    signupCountryCode: user.signupCountryCode,
     hasPin: !!hasPin, // PIN status indicator (exists() returns _id or null)
   });
 }
@@ -183,6 +192,8 @@ export async function updateProfile(req, res) {
       subscriptionPlan: user.subscriptionPlan,
       trialDocCount: user.trialDocCount,
       trialStartDate: user.trialStartDate,
+      signupCountry: user.signupCountry,
+      signupCountryCode: user.signupCountryCode,
     });
   } catch (err) {
     // Handle duplicate mobile errors gracefully

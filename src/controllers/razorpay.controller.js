@@ -1,10 +1,17 @@
 import { razorpayService } from '../services/razorpay.service.js';
 import { getAllPlansWithOverrides } from '../services/subscriptionPlan.service.js';
+import { currencyConversionService } from '../services/currencyConversion.service.js';
 
 export async function listPlans(req, res) {
   try {
     const plans = await getAllPlansWithOverrides();
-    res.json(plans);
+    const country = req.query.country ? String(req.query.country) : '';
+    const timezoneId = req.query.timezoneId ? String(req.query.timezoneId) : '';
+    const enriched = await currencyConversionService.enrichPlansWithLocalCurrency(plans, {
+      country,
+      timezoneId,
+    });
+    res.json(enriched);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
