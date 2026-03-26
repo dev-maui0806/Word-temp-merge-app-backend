@@ -4,6 +4,7 @@ import { createRequire } from 'node:module';
 import Docxtemplater from 'docxtemplater';
 import PizZip from 'pizzip';
 import ImageModule from 'docxtemplater-image-module-free';
+import { removeMeetingTypeSectionsFromDocx } from '../utils/removeMeetingTypeSections.js';
 
 const require = createRequire(import.meta.url);
 const imageSize = require('image-size');
@@ -49,7 +50,18 @@ export class DocxGenerator {
       throw new Error(`Template not found: ${this.templatePath}`);
     }
 
-    const content = fs.readFileSync(this.templatePath, 'binary');
+    // If Meeting_Type is "None", hide any template text block containing the
+    // Meeting_Type placeholder to avoid leaving empty brackets/punctuation.
+    let templatePathToUse = this.templatePath;
+    if (
+      this.data &&
+      typeof this.data.Meeting_Type === 'string' &&
+      (this.data.Meeting_Type.trim() === '' || this.data.Meeting_Type.trim().toLowerCase() === 'none')
+    ) {
+      templatePathToUse = removeMeetingTypeSectionsFromDocx(templatePathToUse);
+    }
+
+    const content = fs.readFileSync(templatePathToUse, 'binary');
     const zip = new PizZip(content);
 
     // Default "fit within margins" sizing.
