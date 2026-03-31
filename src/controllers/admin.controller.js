@@ -129,8 +129,11 @@ export async function saveTemplateFromHtml(req, res) {
     const fileBuffer = await HTMLToDOCX(html, null, {
       table: { row: { cantSplit: true } },
       footer: false,
-      font: 'Calibri',
-      fontSize: 22,
+      // Keep Admin editor defaults aligned with the app's expected template typography.
+      // html-to-docx expects fontSize in half-points (13pt => 26).
+      font: 'Aptos',
+      fontSize: 26,
+      complexScriptFontSize: 26,
     });
 
     const targetPath = path.join(TEMPLATES_DIR, config.template);
