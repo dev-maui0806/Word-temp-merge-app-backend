@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'node:fs';
 import { fileURLToPath } from 'url';
 import XLSX from 'xlsx';
 import Country from '../src/models/Country.js';
@@ -13,13 +14,52 @@ dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const ROOT_DIR = path.join(__dirname, '..', '..');
 const SINGLE_TZ_PATH = path.join(ROOT_DIR, 'doc', 'final_single_timezone_countries.xlsx');
-const MULTI_TZ_PATH = path.join(ROOT_DIR, 'doc', 'multiple time zone countries.xlsx');
+const MULTI_TZ_PATH_CANDIDATES = [
+  path.join(ROOT_DIR, 'doc', 'multiple_timezone_countries.xlsx'),
+  path.join(ROOT_DIR, 'doc', 'multiple time zone countries.xlsx'),
+];
+
+function normalizeKeyName(k) {
+  return String(k || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function rowGet(row, ...keys) {
+  if (!row || typeof row !== 'object') return '';
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) {
+      const v = row[key];
+      if (v != null && String(v).trim() !== '') return v;
+    }
+  }
+  return '';
+}
+
+function normalizeRows(rows) {
+  return (rows || []).map((row) => {
+    const out = {};
+    for (const [k, v] of Object.entries(row || {})) {
+      out[normalizeKeyName(k)] = v;
+    }
+    return out;
+  });
+}
 
 function loadSheetRows(filePath) {
   const wb = XLSX.readFile(filePath);
   const sheetName = wb.SheetNames[0];
   const sheet = wb.Sheets[sheetName];
-  return XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+  return normalizeRows(rows);
+}
+
+function resolveMultiTimezonePath() {
+  for (const p of MULTI_TZ_PATH_CANDIDATES) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  return MULTI_TZ_PATH_CANDIDATES[0];
 }
 
 const ALPHA2_OVERRIDES = {
@@ -37,14 +77,18 @@ const ALPHA2_OVERRIDES = {
 };
 
 function getAlpha2Code(row) {
-  const name = String(row.country_name || row.country || '').trim();
+  const name = String(rowGet(row, 'country_name', 'country') || '').trim();
 
   const raw =
-    row.code ||
-    row.country_code_alpha2 ||
-    row.country_iso_code ||
-    row.country_iso ||
-    row.countryCodeAlpha2 ||
+    rowGet(
+      row,
+      'code',
+      'country_code_alpha2',
+      'country_iso_code',
+      'country_iso',
+      'countrycodealpha2',
+      'country_code'
+    ) ||
     '';
   let v = String(raw || '').trim().toUpperCase();
   if (v) return v;
@@ -67,23 +111,24 @@ function getAlpha2Code(row) {
 async function importSingleTimezoneCountries(rows) {
   let count = 0;
   for (const row of rows) {
-    const name = String(row.country_name || '').trim();
+    const name = String(rowGet(row, 'country_name', 'country') || '').trim();
     if (!name) continue;
 
     const codeAlpha2 = getAlpha2Code(row);
+    if (!codeAlpha2) continue;
 
-    const phoneCode = String(row.country_code || row.Country_code || '').trim();
-    const currency = String(row.currency_code || '').trim();
-    const standardTime = String(row.country_standard_time || '').trim();
-    const timeShort = String(row.country_standard_time_short || '').trim();
+    const phoneCode = String(rowGet(row, 'dial_code', 'country_code') || '').trim();
+    const currency = String(rowGet(row, 'currency_code', 'currency') || '').trim();
+    const standardTime = String(rowGet(row, 'timezone_name', 'country_standard_time', 'standard_time') || '').trim();
+    const timeShort = String(rowGet(row, 'timezone_short', 'time_zone_short', 'country_standard_time_short', 'time_short') || '').trim();
     const ianaTimeZone = String(
-      row.iana_time_zone || row.ianaTimeZone || row.iana_timezone || row.timezone_iana || ''
+      rowGet(row, 'iana_time_zone', 'iana_timezone', 'timezone_iana')
     ).trim();
 
     const label = `${codeAlpha2} ${name}`;
 
     await Country.findOneAndUpdate(
-      { code: codeAlpha2 },
+      { name },
       {
         name,
         code: codeAlpha2,
@@ -105,7 +150,7 @@ async function importSingleTimezoneCountries(rows) {
 async function importMultiTimezoneCountries(rows) {
   const groups = new Map();
   for (const row of rows) {
-    const name = String(row.country_name || '').trim();
+    const name = String(rowGet(row, 'country_name', 'country') || '').trim();
     if (!name) continue;
     if (!groups.has(name)) groups.set(name, []);
     groups.get(name).push(row);
@@ -118,16 +163,16 @@ async function importMultiTimezoneCountries(rows) {
     const first = countryRows[0];
     const codeAlpha2 = getAlpha2Code(first);
 
-    const fallbackPhone = String(first.country_code || first.Country_code || '').trim();
-    const fallbackCurrency = String(first.currency_code || '').trim();
+    const fallbackPhone = String(rowGet(first, 'dial_code', 'country_code') || '').trim();
+    const fallbackCurrency = String(rowGet(first, 'currency_code', 'currency') || '').trim();
 
     const label = `${codeAlpha2} ${countryName}`;
     const firstIanaTimeZone = String(
-      first.iana_time_zone || first.ianaTimeZone || first.iana_timezone || first.timezone_iana || ''
+      rowGet(first, 'iana_time_zone', 'iana_timezone', 'timezone_iana')
     ).trim();
 
     const country = await Country.findOneAndUpdate(
-      { code: codeAlpha2 },
+      { name: countryName },
       {
         name: countryName,
         code: codeAlpha2,
@@ -146,15 +191,15 @@ async function importMultiTimezoneCountries(rows) {
 
     let order = 0;
     for (const row of countryRows) {
-      const cityName = String(row.city_name || '').trim();
+      const cityName = String(rowGet(row, 'city_name', 'city') || '').trim();
       if (!cityName) continue;
 
-      const phoneCode = String(row.country_code || row.Country_code || fallbackPhone || '').trim();
-      const currency = String(row.currency_code || fallbackCurrency || '').trim();
-      const standardTime = String(row.country_standard_time || '').trim();
-      const timeShort = String(row.country_standard_time_short || '').trim();
+      const phoneCode = String(rowGet(row, 'dial_code', 'country_code') || fallbackPhone || '').trim();
+      const currency = String(rowGet(row, 'currency_code', 'currency') || fallbackCurrency || '').trim();
+      const standardTime = String(rowGet(row, 'country_standard_time', 'timezone_name', 'standard_time') || '').trim();
+      const timeShort = String(rowGet(row, 'country_standard_time_short', 'time_zone_short', 'timezone_short', 'time_short') || '').trim();
       const ianaTimeZone = String(
-        row.iana_time_zone || row.ianaTimeZone || row.iana_timezone || row.timezone_iana || ''
+        rowGet(row, 'iana_time_zone', 'iana_timezone', 'timezone_iana')
       ).trim();
 
       await CountryTimezone.create({
@@ -184,7 +229,8 @@ async function main() {
 
   try {
     const singleRows = loadSheetRows(SINGLE_TZ_PATH);
-    const multiRows = loadSheetRows(MULTI_TZ_PATH);
+    const multiPath = resolveMultiTimezonePath();
+    const multiRows = loadSheetRows(multiPath);
 
     await importSingleTimezoneCountries(singleRows);
     await importMultiTimezoneCountries(multiRows);

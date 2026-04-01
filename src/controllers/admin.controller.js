@@ -6,7 +6,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import multer from 'multer';
-import HTMLToDOCX from 'html-to-docx';
 import { TEMPLATE_REGISTRY, getTemplatePath } from '../templates/templateRegistry.js';
 import User from '../models/User.js';
 import Document from '../models/Document.js';
@@ -111,7 +110,8 @@ export async function getTemplateFile(req, res) {
 
 /**
  * POST /admin/templates/:actionSlug/save
- * Save template from HTML content. Converts HTML to DOCX and writes to file.
+ * Disabled: HTML -> DOCX roundtrip changes paragraph and color fidelity.
+ * Admin should replace templates by uploading DOCX directly.
  */
 export async function saveTemplateFromHtml(req, res) {
   try {
@@ -121,28 +121,9 @@ export async function saveTemplateFromHtml(req, res) {
       return res.status(404).json({ error: `Unknown action: ${actionSlug}` });
     }
 
-    const { html } = req.body;
-    if (!html || typeof html !== 'string') {
-      return res.status(400).json({ error: 'HTML content is required' });
-    }
-
-    const fileBuffer = await HTMLToDOCX(html, null, {
-      table: { row: { cantSplit: true } },
-      footer: false,
-      // Keep Admin editor defaults aligned with the app's expected template typography.
-      // html-to-docx expects fontSize in half-points (13pt => 26).
-      font: 'Aptos',
-      fontSize: 26,
-      complexScriptFontSize: 26,
-    });
-
-    const targetPath = path.join(TEMPLATES_DIR, config.template);
-    fs.writeFileSync(targetPath, fileBuffer);
-
-    res.json({
-      success: true,
-      actionSlug,
-      templateFile: config.template,
+    return res.status(410).json({
+      error:
+        'Admin HTML editing is disabled to preserve original DOCX paragraph, spacing, line-break, and color formatting. Please upload a DOCX template file to update it.',
     });
   } catch (err) {
     res.status(400).json({ error: err.message });

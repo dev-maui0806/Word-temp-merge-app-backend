@@ -18,7 +18,6 @@ const countrySchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
-countrySchema.index({ name: 1 }, { unique: true });
 
 const Country = mongoose.model('Country', countrySchema);
 

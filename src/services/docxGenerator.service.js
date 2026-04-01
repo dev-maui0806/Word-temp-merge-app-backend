@@ -23,6 +23,30 @@ function normalizeImageKey(key) {
   return String(key).replace(/\u00A0/g, ' ').trim();
 }
 
+function normalizeInlineText(value) {
+  if (typeof value !== 'string') return value;
+  // Prevent accidental hard line breaks in inline placeholders.
+  return value
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n+/g, ' ')
+    .replace(/\t+/g, ' ')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function relaxForcedBreaksInVariableParagraphs(xml) {
+  if (!xml || typeof xml !== 'string') return xml;
+
+  // If a paragraph contains template placeholders, hard breaks (<w:br/> / <w:cr/>)
+  // can leave large blank areas after merge when real values are shorter.
+  // Replace those forced breaks with a normal space so Word can wrap naturally.
+  return xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, (paragraph) => {
+    if (!paragraph.includes('{{')) return paragraph;
+    return paragraph.replace(/<w:br\s*\/>|<w:cr\s*\/>/g, '<w:t xml:space="preserve"> </w:t>');
+  });
+}
+
 /**
  * DocxGenerator: Load template, inject data, embed images, return Buffer.
  * Uses docxtemplater + pizzip. Missing placeholders are rendered as blank.
@@ -63,6 +87,24 @@ export class DocxGenerator {
 
     const content = fs.readFileSync(templatePathToUse, 'binary');
     const zip = new PizZip(content);
+
+    // Normalize variable paragraphs before templating to avoid fixed wrap points
+    // from author-time manual line breaks.
+    for (const filePath of Object.keys(zip.files || {})) {
+      if (!/^word\/.*\.xml$/.test(filePath)) continue;
+      const f = zip.file(filePath);
+      if (!f) continue;
+      let xml;
+      try {
+        xml = f.asText();
+      } catch {
+        continue;
+      }
+      const nextXml = relaxForcedBreaksInVariableParagraphs(xml);
+      if (nextXml !== xml) {
+        zip.file(filePath, nextXml, { binary: false });
+      }
+    }
 
     // Default "fit within margins" sizing.
     // NOTE: docxtemplater-image-module expects pixel sizes.
@@ -161,7 +203,8 @@ export class DocxGenerator {
 
     const doc = new Docxtemplater(zip, {
       paragraphLoop: true,
-      linebreaks: true,
+      // Keep paragraph flow controlled by template layout only.
+      linebreaks: false,
       // Templates in this project use {{variable}} placeholders (not {variable})
       delimiters: { start: '{{', end: '}}' },
       nullGetter,
@@ -171,7 +214,9 @@ export class DocxGenerator {
     // Use tag names (not Buffers) for image placeholders so the image module calls getImage.
     // Passing Buffer makes the module treat it as pre-rendered { rId, sizePixel } and access undefined[0].
     // This matches the exact logic used in arrange-venue for consistency across all action types.
-    const mergedData = { ...this.data };
+    const mergedData = Object.fromEntries(
+      Object.entries(this.data || {}).map(([k, v]) => [k, normalizeInlineText(v)])
+    );
     
     // Set image keys in mergedData so ImageModule can resolve them
     // IMPORTANT: Set image keys AFTER spreading this.data to ensure they're not overwritten by automation
