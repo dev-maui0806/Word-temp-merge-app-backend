@@ -5,15 +5,34 @@ import crypto from 'node:crypto';
 import PizZip from 'pizzip';
 
 /**
+ * Placeholders that indicate a multi-field narrative paragraph (e.g. arrange-venue
+ * body: booking times + venue + meeting type in one <w:p>). If we removed every
+ * paragraph containing `Meeting_Type`, that whole block would disappear when
+ * Meeting_Type is "None", not just the meeting-type clause.
+ */
+const COMPOUND_PARAGRAPH_MARKERS = [
+  'Start_Time_For_Booking_Venue',
+  'End_Time_For_Booking_Venue',
+  'Venue_Name',
+  'Country_Code',
+  'Venue_Number',
+];
+
+function isStandaloneMeetingTypeParagraph(paragraphXml) {
+  for (const marker of COMPOUND_PARAGRAPH_MARKERS) {
+    if (paragraphXml.includes(marker)) return false;
+  }
+  return true;
+}
+
+/**
  * When Meeting_Type is "None" (empty string), templates often render the
  * placeholder as empty string, leaving behind punctuation/brackets and
  * fragments of the sentence.
  *
- * Requirement: hide the entire text that contains the Meeting_Type field.
- *
- * This removes any <w:p> paragraph that contains the Meeting_Type placeholder
- * token in template XML. It's a pragmatic approach that matches how these
- * templates are authored (Meeting_Type usually lives within a single paragraph).
+ * Standalone paragraphs that only exist to show Meeting_Type can be removed
+ * entirely. Paragraphs that also contain booking times, venue, etc. must stay
+ * so the rest of the letter still merges; only `{{Meeting_Type}}` becomes blank.
  *
  * @param {string} templatePath - DOCX file path
  * @returns {string} A (possibly) temp docx path to use for rendering
@@ -42,13 +61,12 @@ export function removeMeetingTypeSectionsFromDocx(templatePath) {
 
     if (!xml || typeof xml !== 'string') continue;
 
-    // Remove entire paragraphs containing the Meeting_Type placeholder.
+    // Remove only standalone paragraphs whose main content is Meeting_Type.
     // Important: avoid crossing paragraph boundaries (docx XML is flat text).
-    // We do this by forbidding any closing </w:p> before/after the token within
-    // the match. This prevents accidental deletion from the beginning of the
-    // document up to the first later occurrence of Meeting_Type.
     const paragraphWithTokenRegex = /<w:p\b[^>]*>(?:(?!<\/w:p>)[\s\S])*Meeting_Type(?:(?!<\/w:p>)[\s\S])*<\/w:p>/g;
-    const nextXml = xml.replace(paragraphWithTokenRegex, '');
+    const nextXml = xml.replace(paragraphWithTokenRegex, (fullPara) =>
+      isStandaloneMeetingTypeParagraph(fullPara) ? '' : fullPara
+    );
     if (nextXml !== xml) {
       changed = true;
       zip.file(filePath, nextXml, { binary: false });

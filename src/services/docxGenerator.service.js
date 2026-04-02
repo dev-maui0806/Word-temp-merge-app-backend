@@ -74,8 +74,9 @@ export class DocxGenerator {
       throw new Error(`Template not found: ${this.templatePath}`);
     }
 
-    // If Meeting_Type is "None", hide any template text block containing the
-    // Meeting_Type placeholder to avoid leaving empty brackets/punctuation.
+    // If Meeting_Type is "None", remove standalone paragraphs that only exist for
+    // Meeting_Type (see removeMeetingTypeSections). Compound paragraphs that also
+    // contain booking times / venue fields are kept; {{Meeting_Type}} merges blank.
     let templatePathToUse = this.templatePath;
     if (
       this.data &&

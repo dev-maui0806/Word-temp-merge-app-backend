@@ -26,7 +26,8 @@ const TIME_SEED_PRIORITY = [
 ];
 
 /**
- * Pick a non-empty HH:mm-style seed; prefer action-specific Start_Time_* before Event_Time.
+ * Pick a non-empty HH:mm-style seed from `Start_Time_*` fields only.
+ * `Event_Time` is not used — automation runs when a start-time field is set.
  */
 function pickStartTimeForAutomation(input) {
   if (!input || typeof input !== 'object') return null;
@@ -34,14 +35,12 @@ function pickStartTimeForAutomation(input) {
     const v = input[key];
     if (v != null && typeof v === 'string' && v.trim()) return v.trim();
   }
-  const startKeys = Object.keys(input).filter((k) => k.startsWith('Start_Time_'));
+  const startKeys = Object.keys(input).filter((k) => k.toLowerCase().startsWith('start_time'));
   startKeys.sort();
   for (const key of startKeys) {
     const v = input[key];
     if (typeof v === 'string' && v.trim()) return v.trim();
   }
-  const et = input.Event_Time;
-  if (et != null && String(et).trim()) return String(et).trim();
   return null;
 }
 

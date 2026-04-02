@@ -20,20 +20,49 @@ function applyFontToStylesXml(xml) {
 }
 
 /**
+ * Merged text keeps the template run's w:color (e.g. red placeholders). Force black everywhere.
+ */
+function normalizeRunColorsToBlack(xml) {
+  if (!xml || typeof xml !== 'string') return xml;
+  let out = xml.replace(/<w:color\b[^>]*\/>/g, '<w:color w:val="000000"/>');
+  out = out.replace(/<w:highlight\b[^>]*\/>/g, '');
+  return out;
+}
+
+/**
+ * After merge, manual line breaks inside paragraphs can leave awkward gaps; use a normal space.
+ * (Template-time relaxation only runs while `{{` tags exist; this runs on the final document.xml.)
+ */
+function relaxForcedBreaksInAllParagraphs(xml) {
+  if (!xml || typeof xml !== 'string') return xml;
+  return xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, (paragraph) =>
+    paragraph.replace(/<w:br\s*\/>|<w:cr\s*\/>/g, '<w:t xml:space="preserve"> </w:t>')
+  );
+}
+
+/**
  * Applies document-wide font formatting to a generated DOCX buffer.
  * - Font: Aptos
  * - Size: 13pt
- * - Color: Black
+ * - Color: Black (including merged values that inherited placeholder coloring)
+ * - document.xml: softens hard line breaks inside paragraphs for continuous body text
  */
 export function applyDocumentFontFormat(buffer) {
   const zip = new PizZip(buffer);
 
-  for (const path of ['word/styles.xml', 'word/stylesWithEffects.xml']) {
-    const file = zip.file(path);
-    if (file) {
-      const xml = applyFontToStylesXml(file.asText());
-      zip.file(path, xml, { binary: false });
+  for (const relPath of Object.keys(zip.files || {})) {
+    if (!/^word\/.*\.xml$/.test(relPath)) continue;
+    const file = zip.file(relPath);
+    if (!file || file.dir) continue;
+    let xml = file.asText();
+    if (relPath === 'word/styles.xml' || relPath === 'word/stylesWithEffects.xml') {
+      xml = applyFontToStylesXml(xml);
     }
+    xml = normalizeRunColorsToBlack(xml);
+    if (relPath === 'word/document.xml') {
+      xml = relaxForcedBreaksInAllParagraphs(xml);
+    }
+    zip.file(relPath, xml, { binary: false });
   }
 
   return zip.generate({
