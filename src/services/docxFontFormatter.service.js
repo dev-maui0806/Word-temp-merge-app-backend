@@ -36,8 +36,45 @@ function normalizeRunColorsToBlack(xml) {
 function relaxForcedBreaksInAllParagraphs(xml) {
   if (!xml || typeof xml !== 'string') return xml;
   return xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, (paragraph) =>
-    paragraph.replace(/<w:br\s*\/>|<w:cr\s*\/>/g, '<w:t xml:space="preserve"> </w:t>')
+    paragraph.replace(/<w:br\b[^>]*\/>|<w:cr\b[^>]*\/>/g, '<w:t xml:space="preserve"> </w:t>')
   );
+}
+
+/**
+ * Some templates keep image placeholders malformed/split across Word runs.
+ * When Docxtemplater-image-module fails to fully consume them, you can end up
+ * with leftover placeholder text (e.g. `%logo_4` or `{{%logo2}}`) rendered as
+ * plain text near/below images.
+ *
+ * This strips only logo-placeholder-like tokens to avoid showing stray digits.
+ */
+function stripLeftoverLogoPlaceholderTokens(xml) {
+  if (!xml || typeof xml !== 'string') return xml;
+
+  let out = xml;
+
+  // Braced/wrapped placeholders still present
+  out = out.replace(/\{\{%\s*logo_?\d*\s*\}\}/gi, '');
+
+  // Legacy single-brace placeholders
+  out = out.replace(/\{%\s*logo_?\d*\s*%\}/gi, '');
+  out = out.replace(/\{%\s*logo_?\d*\s*\}/gi, '');
+
+  // Unbraced tokens (common in HTML conversions / partial consumption)
+  // Examples: %logo4, %logo_3, %logo2, %logo
+  out = out.replace(/%logo_?\d*/gi, '');
+
+  // Sometimes `%` can be lost during conversion, leaving bare tokens like `logo_4`.
+  out = out.replace(/\blogo_?\d+\b/gi, '');
+
+  // If docxtemplater-image-module inserted an image but left behind a standalone
+  // digit run right after the drawing, remove that digit run.
+  out = out.replace(
+    /(<w:drawing\b[\s\S]*?<\/w:drawing>\s*)<w:r\b[^>]*>\s*<w:t\b[^>]*>\s*\(?\d+\)?\s*<\/w:t>\s*<\/w:r>/g,
+    '$1'
+  );
+
+  return out;
 }
 
 /**
@@ -61,6 +98,15 @@ export function applyDocumentFontFormat(buffer) {
     xml = normalizeRunColorsToBlack(xml);
     if (relPath === 'word/document.xml') {
       xml = relaxForcedBreaksInAllParagraphs(xml);
+    }
+
+    // Strip any leftover placeholder tokens near/below images.
+    // Do this for document + headers/footers as well.
+    if (
+      relPath === 'word/document.xml' ||
+      /^word\/(header\d+|footer\d+)\.xml$/.test(relPath)
+    ) {
+      xml = stripLeftoverLogoPlaceholderTokens(xml);
     }
     zip.file(relPath, xml, { binary: false });
   }

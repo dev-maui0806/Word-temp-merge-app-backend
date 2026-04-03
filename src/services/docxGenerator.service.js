@@ -43,7 +43,7 @@ function relaxForcedBreaksInVariableParagraphs(xml) {
   // Replace those forced breaks with a normal space so Word can wrap naturally.
   return xml.replace(/<w:p\b[^>]*>[\s\S]*?<\/w:p>/g, (paragraph) => {
     if (!paragraph.includes('{{')) return paragraph;
-    return paragraph.replace(/<w:br\s*\/>|<w:cr\s*\/>/g, '<w:t xml:space="preserve"> </w:t>');
+    return paragraph.replace(/<w:br\b[^>]*\/>|<w:cr\b[^>]*\/>/g, '<w:t xml:space="preserve"> </w:t>');
   });
 }
 
